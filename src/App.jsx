@@ -60,34 +60,48 @@ const initDB = () => {
 
 const ImageDB = {
   save: async (id, dataUrl) => {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      store.put(dataUrl, id);
-      tx.oncomplete = () => resolve(id);
-      tx.onerror = () => reject(tx.error);
-    });
+    try {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put(dataUrl, id);
+        tx.oncomplete = () => resolve(id);
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {
+      console.error("DB Save Error:", e);
+      throw e;
+    }
   },
   get: async (id) => {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.get(id);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+    try {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.get(id);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    } catch (e) {
+      console.error("DB Get Error:", e);
+      return null;
+    }
   },
   delete: async (id) => {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      store.delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    try {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {
+      console.error("DB Delete Error:", e);
+    }
   }
 };
 
@@ -118,7 +132,7 @@ const useImageLoader = (imageId) => {
   return src;
 };
 
-// Component to display Async Images
+// Component to display Async Images (Used in Cards, Viewer, and Editor)
 const AsyncImage = ({ imageId, alt, className, fallback }) => {
   const src = useImageLoader(imageId);
   
@@ -160,12 +174,28 @@ class ErrorBoundary extends React.Component {
           </div>
           <h1 className="text-2xl font-bold mb-2">應用程式發生錯誤</h1>
           <p className="text-slate-400 mb-8 text-sm leading-relaxed max-w-xs">
-            發生了未預期的錯誤。您的資料應該是安全的。<br/>請嘗試重新整理。
+            可能是資料讀取錯誤。請嘗試重新整理，或重置資料。<br/>您的照片存放在資料庫中，應該是安全的。
           </p>
           <div className="flex flex-col gap-3 w-full max-w-xs">
              <button onClick={() => window.location.reload()} className="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-xl font-bold text-white shadow-lg">
                重新整理頁面
              </button>
+             <button 
+               onClick={() => { 
+                 if(confirm('警告：這將會清除所有設定資料並重置 APP (照片不會被刪除，但連結可能會遺失)。確定要繼續嗎？')) {
+                   localStorage.clear(); 
+                   window.location.reload(); 
+                 }
+               }} 
+               className="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-slate-400"
+             >
+               重置設定資料 (修復)
+             </button>
+          </div>
+          <div className="mt-8 p-4 bg-black/50 rounded-xl border border-slate-800 w-full max-w-xs text-left overflow-hidden">
+            <p className="text-[10px] font-mono text-rose-400 break-all">
+              {this.state.error?.toString()}
+            </p>
           </div>
         </div>
       );
@@ -434,7 +464,6 @@ const SingleItemScreen = ({ ingredients, searchTerm, activeBlock }) => {
 
 // --- Featured Section Screen ---
 const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem, ingredients, showConfirm }) => {
-  // ... (Logic same as before, just wrapping image in AsyncImage if needed, but cards use RecipeCard which is updated)
   const [activeSectionId, setActiveSectionId] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -1390,7 +1419,7 @@ const EditorSheet = ({
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
@@ -1415,7 +1444,16 @@ const EditorSheet = ({
         ctx.drawImage(img, 0, 0, width, height);
         
         const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
-        setItem({ ...item, image: dataUrl });
+        
+        try {
+            const imgId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            await ImageDB.save(imgId, dataUrl);
+            setItem({ ...item, image: imgId }); 
+        } catch (err) {
+            console.error("Failed to save image to DB", err);
+            if (showAlert) showAlert('錯誤', '無法儲存圖片到資料庫');
+            else alert('無法儲存圖片到資料庫');
+        }
       };
       img.src = event.target.result;
     };
@@ -1473,20 +1511,20 @@ const EditorSheet = ({
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full h-48 bg-slate-800 rounded-2xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer transition-colors hover:border-slate-500 active:scale-[0.99]"
               >
-                  {item.image ? (
-                    <>
-                      <img src={item.image} className="w-full h-full object-cover" alt="Preview" />
+                  <AsyncImage 
+                    imageId={item.image}
+                    className="w-full h-full object-cover"
+                    fallback={
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
+                           <div className="p-4 bg-slate-700/50 rounded-full mb-2"><Camera size={32} /></div>
+                           <span className="text-xs font-bold">點擊拍照或上傳</span>
+                        </div>
+                    }
+                  />
+                  {item.image && (
                       <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <span className="text-white text-sm font-bold flex items-center gap-2"><Camera size={18}/> 更換照片</span>
                       </div>
-                    </>
-                  ) : (
-                    <div className="text-slate-500 flex flex-col items-center">
-                      <div className="p-4 bg-slate-700/50 rounded-full mb-2">
-                        <Camera size={32} />
-                      </div>
-                      <span className="text-xs font-bold">點擊拍照或上傳</span>
-                    </div>
                   )}
               </div>
            </div>
@@ -1781,13 +1819,11 @@ const ViewerOverlay = ({ item, onClose, ingredients, startEdit, requestDelete })
           
           {/* Hero Image */}
           <div className="relative h-72 shrink-0">
-             {item.image ? (
-                <img src={item.image} className="w-full h-full object-cover" alt={item.nameZh} />
-             ) : (
-                <div className="w-full h-full bg-slate-800 flex items-center justify-center">
-                   <Wine size={64} className="text-slate-700"/>
-                </div>
-             )}
+             <AsyncImage 
+                imageId={item.image} 
+                alt={item.nameZh}
+                className="w-full h-full object-cover"
+             />
              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent"></div>
              
              <button 
