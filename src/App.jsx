@@ -34,7 +34,8 @@ import {
   LayoutGrid,
   ListPlus,
   ArrowLeft,
-  Image as ImageIcon 
+  Image as ImageIcon,
+  Database
 } from 'lucide-react';
 
 // ==========================================
@@ -105,7 +106,6 @@ const ImageDB = {
   }
 };
 
-// Hook to load image from DB asynchronously
 const useImageLoader = (imageId) => {
   const [src, setSrc] = useState(null);
 
@@ -114,13 +114,11 @@ const useImageLoader = (imageId) => {
       setSrc(null);
       return;
     }
-    // If it's a legacy base64 string or web URL, use it directly
     if (imageId.startsWith('data:') || imageId.startsWith('http')) {
       setSrc(imageId);
       return;
     }
 
-    // Otherwise, try to fetch from IndexedDB
     let isMounted = true;
     ImageDB.get(imageId).then(data => {
       if (isMounted && data) setSrc(data);
@@ -132,7 +130,6 @@ const useImageLoader = (imageId) => {
   return src;
 };
 
-// Component to display Async Images
 const AsyncImage = ({ imageId, alt, className, fallback }) => {
   const src = useImageLoader(imageId);
   
@@ -447,7 +444,9 @@ const SingleItemScreen = ({ ingredients, searchTerm, activeBlock }) => {
 
 // --- Featured Section Screen ---
 const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem, ingredients, showConfirm }) => {
-  const [activeSectionId, setActiveSectionId] = useState(null);
+  const [activeSectionId, setActiveSectionId] = useState(() => {
+     try { return localStorage.getItem('bar_active_section_v1'); } catch { return null; }
+  });
   const [isAdding, setIsAdding] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [newSectionTitle, setNewSectionTitle] = useState('');
@@ -457,7 +456,21 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
   const [pickingForSubgroupId, setPickingForSubgroupId] = useState(null);
   const [pickerSearch, setPickerSearch] = useState('');
 
+  useEffect(() => {
+     if (activeSectionId) {
+        try { localStorage.setItem('bar_active_section_v1', activeSectionId); } catch {}
+     } else {
+        try { localStorage.removeItem('bar_active_section_v1'); } catch {}
+     }
+  }, [activeSectionId]);
+
   const activeSection = sections.find(s => s.id === activeSectionId);
+
+  useEffect(() => {
+    if (activeSectionId && !activeSection) {
+      setActiveSectionId(null);
+    }
+  }, [sections, activeSectionId, activeSection]);
 
   const handleAddSection = () => {
     if (newSectionTitle.trim()) {
@@ -652,7 +665,6 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
   );
 };
 
-// ... CategoryEditModal & CategoryGrid are same as before ...
 const CategoryEditModal = ({ isOpen, onClose, onSave, categories }) => {
   const [nameZh, setNameZh] = useState('');
   const [nameEn, setNameEn] = useState('');
@@ -708,18 +720,22 @@ const RecipeListScreen = ({
   startEdit, 
   setViewingItem,
   availableTags,
-  availableBases, // Updated to use dynamic prop
+  availableBases,
 }) => {
   const [filterBases, setFilterBases] = useState([]);
   const [filterTags, setFilterTags] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
   
-  // Grid View State
-  const [activeBlock, setActiveBlock] = useState(null);
+  const [activeBlock, setActiveBlock] = useState(() => {
+     try {
+        const saved = localStorage.getItem('bar_active_grid_v1');
+        return saved ? JSON.parse(saved) : null;
+     } catch { return null; }
+  });
+
   const [isGridEditing, setIsGridEditing] = useState(false);
   const [showCatModal, setShowCatModal] = useState(false);
   
-  // Load custom grid categories (Object Structure V3)
   const [gridCategories, setGridCategories] = useState(() => {
     try {
       const saved = localStorage.getItem('bar_grid_cats_v3');
@@ -727,8 +743,6 @@ const RecipeListScreen = ({
     } catch (e) {
       console.error("Error loading grid cats:", e);
     }
-
-    // Default Initialization V3 Structure
     return [
       { id: 'gin', nameZh: 'Gin', nameEn: '琴酒', iconType: 'martini', gradient: 'from-blue-600 to-indigo-700' },
       { id: 'whisky', nameZh: 'Whisky', nameEn: '威士忌', iconType: 'whisky', gradient: 'from-amber-600 to-orange-700' },
@@ -743,22 +757,22 @@ const RecipeListScreen = ({
     localStorage.setItem('bar_grid_cats_v3', JSON.stringify(gridCategories));
   }, [gridCategories]);
 
-  // Reset to Grid when tab changes (unless searching)
   useEffect(() => {
-    if (!searchTerm) {
+    if (activeBlock) localStorage.setItem('bar_active_grid_v1', JSON.stringify(activeBlock));
+    else localStorage.removeItem('bar_active_grid_v1');
+  }, [activeBlock]);
+
+  useEffect(() => {
+    if (searchTerm) {
       setActiveBlock(null);
-      setFilterBases([]);
-      setFilterTags([]);
     }
-  }, [recipeCategoryFilter]);
+  }, [searchTerm]);
 
   const isSearching = searchTerm.length > 0;
-  // Modify logic: Grid shows only if NOT searching, NOT active block selected, AND NOT in 'all' tab
   const showGrid = !isSearching && !activeBlock && recipeCategoryFilter !== 'all';
 
   const handleBlockSelect = (cat) => {
     setActiveBlock(cat);
-    // Logic: If block name matches a base spirit (fuzzy), use base filter.
     const baseMatch = availableBases.find(b => b.includes(cat.nameZh) || b.includes(cat.nameEn));
     
     if (baseMatch) {
@@ -791,9 +805,19 @@ const RecipeListScreen = ({
       const matchBase = filterBases.length === 0 || filterBases.includes(r.baseSpirit);
       const matchTags = filterTags.length === 0 || filterTags.every(t => r.tags?.includes(t));
       
-      return matchCat && matchSearch && matchBase && matchTags;
+      let matchGrid = true;
+      if (activeBlock) {
+         const baseMatch = availableBases.find(b => b.includes(activeBlock.nameZh) || b.includes(activeBlock.nameEn));
+         if (baseMatch) {
+            matchGrid = r.baseSpirit === baseMatch;
+         } else {
+            matchGrid = r.tags?.includes(activeBlock.nameZh);
+         }
+      }
+
+      return matchCat && matchSearch && matchBase && matchTags && matchGrid;
     });
-  }, [recipes, recipeCategoryFilter, searchTerm, filterBases, filterTags]);
+  }, [recipes, recipeCategoryFilter, searchTerm, filterBases, filterTags, activeBlock, availableBases]);
 
   return (
     <div className="h-full flex flex-col animate-fade-in w-full bg-slate-950">
@@ -809,8 +833,7 @@ const RecipeListScreen = ({
               />
            </div>
            
-           {/* Only show filter button if we are NOT in grid mode */}
-           {!showGrid && (
+           {!showGrid && recipeCategoryFilter !== 'single' && (
              <button 
                onClick={() => setShowFilters(!showFilters)} 
                className={`p-2 rounded-xl border transition-colors ${showFilters || filterBases.length > 0 || filterTags.length > 0 ? 'bg-slate-800 border-amber-500/50 text-amber-500' : 'border-slate-800 text-slate-400'}`}
@@ -827,113 +850,47 @@ const RecipeListScreen = ({
         </div>
 
         <div className="flex px-4 border-b border-slate-800/50 w-full overflow-x-auto no-scrollbar">
-           {[
-             {id: 'all', label: '全部 All'},
-             {id: 'classic', label: '經典 Classic'},
-             {id: 'signature', label: '特調 Signature'},
-             {id: 'single', label: '單品/純飲 Single'},
-           ].map(cat => (
-             <button 
-               key={cat.id}
-               onClick={() => setRecipeCategoryFilter(cat.id)}
-               className={`flex-1 pb-3 px-4 text-sm font-medium border-b-2 transition-colors select-none whitespace-nowrap flex items-center justify-center gap-1 ${recipeCategoryFilter === cat.id ? 'border-amber-500 text-amber-500' : 'border-transparent text-slate-500'}`}
-             >
-               {cat.label}
-             </button>
+           {[{id: 'all', label: '全部 All'}, {id: 'classic', label: '經典 Classic'}, {id: 'signature', label: '特調 Signature'}, {id: 'single', label: '單品/純飲 Single'}].map(cat => (
+             <button key={cat.id} onClick={() => setRecipeCategoryFilter(cat.id)} className={`flex-1 pb-3 px-4 text-sm font-medium border-b-2 transition-colors select-none whitespace-nowrap flex items-center justify-center gap-1 ${recipeCategoryFilter === cat.id ? 'border-amber-500 text-amber-500' : 'border-transparent text-slate-500'}`}>{cat.label}</button>
            ))}
         </div>
 
-        {/* Show filters if explicitly toggled AND we are not in grid view */}
-        {showFilters && !showGrid && (
+        {(showFilters || recipeCategoryFilter === 'all') && !showGrid && recipeCategoryFilter !== 'single' && (
           <div className="p-4 bg-slate-900 border-b border-slate-800 animate-slide-up w-full">
-             <div className="mb-4">
-              <ChipSelector 
-                title="基酒篩選 (Base)" 
-                options={availableBases} 
-                selected={filterBases} 
-                onSelect={setFilterBases} 
-              />
-            </div>
-            <div>
-              <ChipSelector 
-                title="風味篩選 (Flavor)" 
-                options={availableTags} 
-                selected={filterTags} 
-                onSelect={setFilterTags} 
-              />
-            </div>
-            <div className="mt-4 flex justify-between items-center text-xs text-slate-500">
-               <span>找到 {filtered.length} 款酒譜</span>
-               <button onClick={() => {setFilterBases([]); setFilterTags([]);}} className="text-rose-400 hover:text-rose-300">清除篩選</button>
-            </div>
+             <div className="mb-4"><ChipSelector title="基酒篩選 (Base)" options={availableBases} selected={filterBases} onSelect={setFilterBases} /></div>
+             <div><ChipSelector title="風味篩選 (Flavor)" options={availableTags} selected={filterTags} onSelect={setFilterTags} /></div>
+             <div className="mt-4 flex justify-between items-center text-xs text-slate-500"><span>找到 {filtered.length} 款酒譜</span><button onClick={() => {setFilterBases([]); setFilterTags([]);}} className="text-rose-400 hover:text-rose-300">清除篩選</button></div>
           </div>
         )}
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar">
          {showGrid ? (
-            <CategoryGrid 
-              categories={gridCategories} 
-              onSelect={handleBlockSelect} 
-              onAdd={() => setShowCatModal(true)}
-              onDelete={handleDeleteCategory}
-              isEditing={isGridEditing}
-              toggleEditing={() => setIsGridEditing(!isGridEditing)}
-            />
+            <CategoryGrid categories={gridCategories} onSelect={handleBlockSelect} onAdd={() => setShowCatModal(true)} onDelete={handleDeleteCategory} isEditing={isGridEditing} toggleEditing={() => setIsGridEditing(!isGridEditing)} />
          ) : (
             <div className="p-4 space-y-4 pb-24">
                {activeBlock && (
                  <div className="flex items-center gap-3 mb-4 animate-fade-in">
-                    <button onClick={clearBlockFilter} className="p-2 bg-slate-800 rounded-full hover:bg-slate-700 text-slate-200">
-                      <ArrowLeft size={20}/>
-                    </button>
-                    <div>
-                       <div className="text-xs text-slate-500">正在檢視</div>
-                       <div className="text-xl font-bold text-amber-500">{activeBlock.nameZh}</div>
-                    </div>
+                    <button onClick={clearBlockFilter} className="p-2 bg-slate-800 rounded-full hover:bg-slate-700 text-slate-200"><ArrowLeft size={20}/></button>
+                    <div><div className="text-xs text-slate-500">正在檢視</div><div className="text-xl font-bold text-amber-500">{activeBlock.nameZh}</div></div>
                  </div>
                )}
 
-               {recipeCategoryFilter === 'single' ? (
-                 <SingleItemScreen 
-                   ingredients={ingredients} 
-                   searchTerm={searchTerm} 
-                   activeBlock={activeBlock} 
-                 />
-               ) : (
-                 filtered.length > 0 ? (
-                   filtered.map(recipe => (
-                     <RecipeCard 
-                        key={recipe.id} 
-                        recipe={recipe} 
-                        ingredients={ingredients} 
-                        onClick={setViewingItem} 
-                     />
-                   ))
-                 ) : (
-                   <div className="text-center py-10 text-slate-500 flex flex-col items-center">
-                     <Filter size={48} className="mb-4 opacity-20"/>
-                     <p>沒有找到符合條件的酒譜</p>
-                     {activeBlock && <button onClick={clearBlockFilter} className="mt-4 text-amber-500 underline">返回分類</button>}
-                   </div>
-                 )
+               {recipeCategoryFilter === 'single' ? <SingleItemScreen ingredients={ingredients} searchTerm={searchTerm} activeBlock={activeBlock} /> : (
+                 filtered.length > 0 ? filtered.map(recipe => <RecipeCard key={recipe.id} recipe={recipe} ingredients={ingredients} onClick={setViewingItem} />) : <div className="text-center py-10 text-slate-500 flex flex-col items-center"><Filter size={48} className="mb-4 opacity-20"/><p>沒有找到符合條件的酒譜</p>{activeBlock && <button onClick={clearBlockFilter} className="mt-4 text-amber-500 underline">返回分類</button>}</div>
                )}
                <div className="h-10"></div>
             </div>
          )}
       </div>
       
-      {/* Category Edit Modal */}
-      <CategoryEditModal 
-         isOpen={showCatModal} 
-         onClose={() => setShowCatModal(false)} 
-         onSave={handleAddCategory} 
-      />
+      <CategoryEditModal isOpen={showCatModal} onClose={() => setShowCatModal(false)} onSave={handleAddCategory} />
     </div>
   );
 };
 
 const InventoryScreen = ({ ingredients, startEdit, requestDelete, ingCategories, setIngCategories, showConfirm, onBatchAdd, availableBases }) => {
+  // ... Same as before ...
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [isAddingCat, setIsAddingCat] = useState(false);
   const [newCatName, setNewCatName] = useState('');
@@ -942,219 +899,33 @@ const InventoryScreen = ({ ingredients, startEdit, requestDelete, ingCategories,
   const [batchText, setBatchText] = useState('');
   const [batchCategory, setBatchCategory] = useState('other');
 
-  useEffect(() => {
-    setSubCategoryFilter('all');
-  }, [categoryFilter]);
-
-  const handleAddCategory = () => {
-    if (newCatName.trim()) {
-      const newId = generateId();
-      setIngCategories([...ingCategories, { id: newId, label: newCatName.trim() }]);
-      setNewCatName('');
-      setIsAddingCat(false);
-      setCategoryFilter(newId);
-    }
-  };
-
-  const deleteCategory = (id) => {
-    if (['alcohol', 'soft', 'other'].includes(id)) return;
-    showConfirm('刪除分類', '確定刪除此分類？(分類下的材料不會被刪除，但會從此分類移除)', () => {
-      setIngCategories(ingCategories.filter(c => c.id !== id));
-      if (categoryFilter === id) setCategoryFilter('all');
-    });
-  };
-  
-  const handleBatchSubmit = () => {
-    const lines = batchText.split('\n').filter(line => line.trim() !== '');
-    if (lines.length === 0) return;
-    
-    const newItems = lines.map(name => ({
-      id: generateId(),
-      nameZh: name.trim(),
-      nameEn: '',
-      type: batchCategory,
-      price: 0,
-      volume: 700,
-      unit: 'ml',
-      abv: 0,
-      subType: ''
-    }));
-    
-    onBatchAdd(newItems);
-    setBatchText('');
-    setShowBatchModal(false);
-  };
-
-  const filteredIngredients = useMemo(() => {
-    return ingredients.filter(i => {
-      if (categoryFilter !== 'all' && i.type !== categoryFilter) return false;
-      if (categoryFilter === 'alcohol' && subCategoryFilter !== 'all') {
-        return i.subType === subCategoryFilter;
-      }
-      return true;
-    });
-  }, [ingredients, categoryFilter, subCategoryFilter]);
+  useEffect(() => { setSubCategoryFilter('all'); }, [categoryFilter]);
+  const handleAddCategory = () => { if (newCatName.trim()) { const newId = generateId(); setIngCategories([...ingCategories, { id: newId, label: newCatName.trim() }]); setNewCatName(''); setIsAddingCat(false); setCategoryFilter(newId); } };
+  const deleteCategory = (id) => { if (['alcohol', 'soft', 'other'].includes(id)) return; showConfirm('刪除分類', '確定刪除此分類？(分類下的材料不會被刪除，但會從此分類移除)', () => { setIngCategories(ingCategories.filter(c => c.id !== id)); if (categoryFilter === id) setCategoryFilter('all'); }); };
+  const handleBatchSubmit = () => { const lines = batchText.split('\n').filter(line => line.trim() !== ''); if (lines.length === 0) return; const newItems = lines.map(name => ({ id: generateId(), nameZh: name.trim(), nameEn: '', type: batchCategory, price: 0, volume: 700, unit: 'ml', abv: 0, subType: '' })); onBatchAdd(newItems); setBatchText(''); setShowBatchModal(false); };
+  const filteredIngredients = useMemo(() => { return ingredients.filter(i => { if (categoryFilter !== 'all' && i.type !== categoryFilter) return false; if (categoryFilter === 'alcohol' && subCategoryFilter !== 'all') { return i.subType === subCategoryFilter; } return true; }); }, [ingredients, categoryFilter, subCategoryFilter]);
 
   return (
     <div className="h-full flex flex-col animate-fade-in w-full bg-slate-950">
       <div className="shrink-0 bg-slate-950/95 backdrop-blur z-20 border-b border-slate-800 shadow-md px-4 pt-safe pb-0">
-        <div className="flex justify-between items-center mb-4 mt-4">
-          <h2 className="text-2xl font-serif text-slate-100">材料庫</h2>
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setShowBatchModal(true)} 
-              className="flex items-center gap-2 bg-slate-800 text-slate-400 px-3 py-2 rounded-full border border-slate-700 text-sm hover:bg-slate-700 hover:text-white transition-colors"
-              title="批次新增"
-            >
-              <FilePlus size={16} /> <span className="hidden sm:inline">批次</span>
-            </button>
-            <button onClick={() => startEdit('ingredient')} className="flex items-center gap-2 bg-slate-800 text-slate-200 px-4 py-2 rounded-full border border-slate-700 text-sm hover:bg-slate-700 hover:border-amber-500/50 transition-colors">
-              <Plus size={16} /> 新增
-            </button>
-          </div>
-        </div>
-        
+        <div className="flex justify-between items-center mb-4 mt-4"><h2 className="text-2xl font-serif text-slate-100">材料庫</h2><div className="flex gap-2"><button onClick={() => setShowBatchModal(true)} className="flex items-center gap-2 bg-slate-800 text-slate-400 px-3 py-2 rounded-full border border-slate-700 text-sm hover:bg-slate-700 hover:text-white transition-colors" title="批次新增"><FilePlus size={16} /> <span className="hidden sm:inline">批次</span></button><button onClick={() => startEdit('ingredient')} className="flex items-center gap-2 bg-slate-800 text-slate-200 px-4 py-2 rounded-full border border-slate-700 text-sm hover:bg-slate-700 hover:border-amber-500/50 transition-colors"><Plus size={16} /> 新增</button></div></div>
         <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar w-full">
-          <button
-            onClick={() => setCategoryFilter('all')}
-            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold transition-all select-none ${
-              categoryFilter === 'all' 
-                ? 'bg-amber-600 text-white shadow' 
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-            }`}
-          >
-            全部
-          </button>
-          
-          {ingCategories.map(cat => (
-            <div key={cat.id} className="relative group">
-              <button
-                onClick={() => setCategoryFilter(cat.id)}
-                className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold transition-all pr-4 select-none ${
-                  categoryFilter === cat.id 
-                    ? 'bg-slate-700 text-white border border-amber-500/50 shadow' 
-                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                }`}
-              >
-                {cat.label}
-              </button>
-              {!['alcohol', 'soft', 'other'].includes(cat.id) && (
-                <button 
-                  onClick={(e) => { e.stopPropagation(); deleteCategory(cat.id); }}
-                  className="absolute -top-1 -right-1 bg-rose-600 text-white rounded-full p-0.5 w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[8px]"
-                >
-                  <X size={8} strokeWidth={4}/>
-                </button>
-              )}
-            </div>
-          ))}
-
-          {isAddingCat ? (
-            <div className="flex items-center bg-slate-800 rounded-full px-2 py-1 border border-slate-600 animate-fade-in">
-              <input 
-                autoFocus
-                className="bg-transparent text-xs text-white w-16 outline-none"
-                placeholder="分類名稱"
-                value={newCatName}
-                onChange={e => setNewCatName(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
-                onBlur={() => { if(!newCatName) setIsAddingCat(false); }}
-              />
-              <button onClick={handleAddCategory} className="text-amber-500 ml-1"><Check size={14}/></button>
-            </div>
-          ) : (
-            <button onClick={() => setIsAddingCat(true)} className="p-1.5 bg-slate-800 rounded-full text-slate-500 hover:text-white hover:bg-slate-700">
-              <Plus size={14}/>
-            </button>
-          )}
+          <button onClick={() => setCategoryFilter('all')} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold transition-all select-none ${categoryFilter === 'all' ? 'bg-amber-600 text-white shadow' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>全部</button>
+          {ingCategories.map(cat => (<div key={cat.id} className="relative group"><button onClick={() => setCategoryFilter(cat.id)} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold transition-all pr-4 select-none ${categoryFilter === cat.id ? 'bg-slate-700 text-white border border-amber-500/50 shadow' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>{cat.label}</button>{!['alcohol', 'soft', 'other'].includes(cat.id) && (<button onClick={(e) => { e.stopPropagation(); deleteCategory(cat.id); }} className="absolute -top-1 -right-1 bg-rose-600 text-white rounded-full p-0.5 w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[8px]"><X size={8} strokeWidth={4}/></button>)}</div>))}
+          {isAddingCat ? (<div className="flex items-center bg-slate-800 rounded-full px-2 py-1 border border-slate-600 animate-fade-in"><input autoFocus className="bg-transparent text-xs text-white w-16 outline-none" placeholder="分類名稱" value={newCatName} onChange={e => setNewCatName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddCategory()} onBlur={() => { if(!newCatName) setIsAddingCat(false); }} /><button onClick={handleAddCategory} className="text-amber-500 ml-1"><Check size={14}/></button></div>) : (<button onClick={() => setIsAddingCat(true)} className="p-1.5 bg-slate-800 rounded-full text-slate-500 hover:text-white hover:bg-slate-700"><Plus size={14}/></button>)}
         </div>
-
-        {categoryFilter === 'alcohol' && (
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 mt-2 no-scrollbar w-full animate-slide-up">
-             <span className="text-[10px] text-slate-500 font-bold shrink-0 uppercase tracking-wider pl-1">細項:</span>
-             <button 
-               onClick={()=>setSubCategoryFilter('all')} 
-               className={`whitespace-nowrap px-2 py-1 rounded text-[10px] font-medium transition-colors border ${subCategoryFilter === 'all' ? 'bg-slate-700 border-slate-600 text-white' : 'border-transparent text-slate-500'}`}
-             >
-               全部
-             </button>
-             {availableBases.map(spirit => (
-                 <button 
-                   key={spirit}
-                   onClick={()=>setSubCategoryFilter(spirit)} 
-                   className={`whitespace-nowrap px-2 py-1 rounded text-[10px] font-medium transition-colors border ${subCategoryFilter === spirit ? 'bg-slate-700 border-slate-600 text-white' : 'border-transparent text-slate-500'}`}
-                 >
-                   {safeString(spirit).split(' ')[0]}
-                 </button>
-             ))}
-          </div>
-        )}
+        {categoryFilter === 'alcohol' && (<div className="flex items-center gap-2 overflow-x-auto pb-2 mt-2 no-scrollbar w-full animate-slide-up"><span className="text-[10px] text-slate-500 font-bold shrink-0 uppercase tracking-wider pl-1">細項:</span><button onClick={()=>setSubCategoryFilter('all')} className={`whitespace-nowrap px-2 py-1 rounded text-[10px] font-medium transition-colors border ${subCategoryFilter === 'all' ? 'bg-slate-700 border-slate-600 text-white' : 'border-transparent text-slate-500'}`}>全部</button>{availableBases.map(spirit => (<button key={spirit} onClick={()=>setSubCategoryFilter(spirit)} className={`whitespace-nowrap px-2 py-1 rounded text-[10px] font-medium transition-colors border ${subCategoryFilter === spirit ? 'bg-slate-700 border-slate-600 text-white' : 'border-transparent text-slate-500'}`}>{safeString(spirit).split(' ')[0]}</button>))}</div>)}
       </div>
-
       <div className="flex-1 overflow-y-auto p-4 space-y-2 pb-24 custom-scrollbar">
-        {filteredIngredients.map(ing => (
-          <IngredientRow 
-             key={ing.id} 
-             ing={ing} 
-             onClick={() => startEdit('ingredient', ing)} 
-             onDelete={(id) => requestDelete(id, 'ingredient')} 
-          />
-        ))}
-        {filteredIngredients.length === 0 && (
-          <div className="text-center py-10 text-slate-500 flex flex-col items-center">
-            <Layers size={40} className="mb-2 opacity-20"/>
-            <span>此分類無材料</span>
-          </div>
-        )}
+        {filteredIngredients.map(ing => <IngredientRow key={ing.id} ing={ing} onClick={() => startEdit('ingredient', ing)} onDelete={(id) => requestDelete(id, 'ingredient')} />)}
+        {filteredIngredients.length === 0 && <div className="text-center py-10 text-slate-500 flex flex-col items-center"><Layers size={40} className="mb-2 opacity-20"/><span>此分類無材料</span></div>}
       </div>
-
-      {showBatchModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl p-6 animate-scale-in flex flex-col max-h-[80vh]">
-             <div className="flex justify-between items-center mb-4">
-               <h3 className="text-xl font-bold text-white flex items-center gap-2"><FilePlus size={20}/> 批次新增材料</h3>
-               <button onClick={() => setShowBatchModal(false)} className="text-slate-400 hover:text-white"><X size={24}/></button>
-             </div>
-             
-             <p className="text-xs text-slate-400 mb-2">請輸入材料名稱，一行一個。新增後預設價格為 $0，可稍後再編輯。</p>
-             
-             <textarea 
-               value={batchText}
-               onChange={e => setBatchText(e.target.value)}
-               placeholder={`例如:\n金巴利\n甜香艾酒\n蘇打水`}
-               className="flex-1 bg-slate-800 border border-slate-600 rounded-xl p-3 text-slate-200 focus:border-amber-500 outline-none resize-none mb-4 h-48"
-               autoFocus
-             />
-             
-             <div className="mb-4">
-                <label className="text-xs text-slate-500 font-bold uppercase block mb-1">預設分類</label>
-                <div className="flex gap-2">
-                   {ingCategories.slice(0, 3).map(cat => (
-                      <button 
-                        key={cat.id}
-                        onClick={() => setBatchCategory(cat.id)}
-                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${batchCategory === cat.id ? 'bg-slate-700 border-amber-500 text-white' : 'border-slate-700 text-slate-500'}`}
-                      >
-                        {cat.label}
-                      </button>
-                   ))}
-                </div>
-             </div>
-             
-             <button 
-               onClick={handleBatchSubmit} 
-               disabled={!batchText.trim()}
-               className="w-full py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-sm shadow-lg shadow-amber-900/20"
-             >
-               確認新增 {batchText.split('\n').filter(l => l.trim()).length > 0 ? `(${batchText.split('\n').filter(l => l.trim()).length} 筆)` : ''}
-             </button>
-          </div>
-        </div>
-      )}
+      {showBatchModal && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"><div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl p-6 animate-scale-in flex flex-col max-h-[80vh]"><div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold text-white flex items-center gap-2"><FilePlus size={20}/> 批次新增材料</h3><button onClick={() => setShowBatchModal(false)} className="text-slate-400 hover:text-white"><X size={24}/></button></div><p className="text-xs text-slate-400 mb-2">請輸入材料名稱，一行一個。新增後預設價格為 $0，可稍後再編輯。</p><textarea value={batchText} onChange={e => setBatchText(e.target.value)} placeholder={`例如:\n金巴利\n甜香艾酒\n蘇打水`} className="flex-1 bg-slate-800 border border-slate-600 rounded-xl p-3 text-slate-200 focus:border-amber-500 outline-none resize-none mb-4 h-48" autoFocus /><div className="mb-4"><label className="text-xs text-slate-500 font-bold uppercase block mb-1">預設分類</label><div className="flex gap-2">{ingCategories.slice(0, 3).map(cat => (<button key={cat.id} onClick={() => setBatchCategory(cat.id)} className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${batchCategory === cat.id ? 'bg-slate-700 border-amber-500 text-white' : 'border-slate-700 text-slate-500'}`}>{cat.label}</button>))}</div></div><button onClick={handleBatchSubmit} disabled={!batchText.trim()} className="w-full py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-sm shadow-lg shadow-amber-900/20">確認新增 {batchText.split('\n').filter(l => l.trim()).length > 0 ? `(${batchText.split('\n').filter(l => l.trim()).length} 筆)` : ''}</button></div></div>)}
     </div>
   );
 };
 
+// ... QuickCalcScreen (No changes) ...
 const QuickCalcScreen = ({ ingredients }) => {
   const [mode, setMode] = useState('single');
   const [price, setPrice] = useState('');
@@ -1163,21 +934,9 @@ const QuickCalcScreen = ({ ingredients }) => {
   const [draftIngs, setDraftIngs] = useState([]);
   const [technique, setTechnique] = useState('Stir');
 
-  const addDraftIng = (ingId) => {
-    if(!ingId) return;
-    setDraftIngs([...draftIngs, { id: ingId, amount: 30 }]);
-  };
-
-  const updateDraftAmount = (idx, val) => {
-    const newIngs = [...draftIngs];
-    newIngs[idx].amount = val;
-    setDraftIngs(newIngs);
-  };
-
-  const removeDraftIng = (idx) => {
-    setDraftIngs(draftIngs.filter((_, i) => i !== idx));
-  };
-  
+  const addDraftIng = (ingId) => { if(!ingId) return; setDraftIngs([...draftIngs, { id: ingId, amount: 30 }]); };
+  const updateDraftAmount = (idx, val) => { const newIngs = [...draftIngs]; newIngs[idx].amount = val; setDraftIngs(newIngs); };
+  const removeDraftIng = (idx) => { setDraftIngs(draftIngs.filter((_, i) => i !== idx)); };
   const draftStats = useMemo(() => calculateRecipeStats({ ingredients: draftIngs, technique }, ingredients), [draftIngs, technique, ingredients]);
 
   return (
@@ -1185,101 +944,34 @@ const QuickCalcScreen = ({ ingredients }) => {
       <div className="shrink-0 bg-slate-950/95 backdrop-blur z-20 border-b border-slate-800 p-4 pt-safe">
         <h2 className="text-xl font-serif mb-4 mt-4">成本計算工具</h2>
         <div className="flex bg-slate-800 p-1 rounded-xl">
-          <button 
-            onClick={() => setMode('single')}
-            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all select-none ${mode === 'single' ? 'bg-slate-700 text-white shadow' : 'text-slate-500'}`}
-          >
-            純飲速算 (列表)
-          </button>
-          <button 
-            onClick={() => setMode('draft')}
-            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all select-none ${mode === 'draft' ? 'bg-amber-600 text-white shadow' : 'text-slate-500'}`}
-          >
-            雞尾酒草稿 (Draft)
-          </button>
+          <button onClick={() => setMode('single')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all select-none ${mode === 'single' ? 'bg-slate-700 text-white shadow' : 'text-slate-500'}`}>純飲速算 (列表)</button>
+          <button onClick={() => setMode('draft')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all select-none ${mode === 'draft' ? 'bg-amber-600 text-white shadow' : 'text-slate-500'}`}>雞尾酒草稿 (Draft)</button>
         </div>
       </div>
-
       <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-24 custom-scrollbar">
         {mode === 'single' ? (
           <div className="space-y-6 animate-fade-in">
              <div className="bg-slate-900 rounded-2xl p-4 border border-slate-800 space-y-4">
                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                     <label className="text-xs font-bold text-slate-500 uppercase">單瓶成本 ($)</label>
-                     <input 
-                       type="number" 
-                       value={price}
-                       onChange={e => setPrice(e.target.value)}
-                       placeholder="800"
-                       className="w-full p-3 bg-slate-800 rounded-xl border border-slate-700 outline-none focus:border-amber-500 text-white font-mono text-lg"
-                     />
-                  </div>
-                  <div className="space-y-2">
-                     <label className="text-xs font-bold text-slate-500 uppercase">容量 (ml)</label>
-                     <input 
-                       type="number" 
-                       value={volume}
-                       onChange={e => setVolume(e.target.value)}
-                       className="w-full p-3 bg-slate-800 rounded-xl border border-slate-700 outline-none focus:border-amber-500 text-white font-mono text-lg"
-                     />
-                  </div>
+                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500 uppercase">單瓶成本 ($)</label><input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="800" className="w-full p-3 bg-slate-800 rounded-xl border border-slate-700 outline-none focus:border-amber-500 text-white font-mono text-lg" /></div>
+                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500 uppercase">容量 (ml)</label><input type="number" value={volume} onChange={e => setVolume(e.target.value)} className="w-full p-3 bg-slate-800 rounded-xl border border-slate-700 outline-none focus:border-amber-500 text-white font-mono text-lg" /></div>
                </div>
-               
                <div className="space-y-2 pt-2 border-t border-slate-800">
-                  <div className="flex justify-between items-center">
-                     <label className="text-xs font-bold text-slate-500 uppercase">目標成本率 (Cost Rate)</label>
-                     <div className="flex items-center gap-2">
-                        <button onClick={() => setTargetCostRate(Math.max(10, targetCostRate - 5))} className="w-6 h-6 rounded bg-slate-800 text-slate-400 flex items-center justify-center border border-slate-700 hover:text-white">-</button>
-                        <span className="text-amber-500 font-bold font-mono w-8 text-center">{targetCostRate}%</span>
-                        <button onClick={() => setTargetCostRate(Math.min(100, targetCostRate + 5))} className="w-6 h-6 rounded bg-slate-800 text-slate-400 flex items-center justify-center border border-slate-700 hover:text-white">+</button>
-                     </div>
-                  </div>
-                  <input 
-                    type="range" 
-                    min="10" 
-                    max="80" 
-                    step="1"
-                    value={targetCostRate} 
-                    onChange={e => setTargetCostRate(Number(e.target.value))} 
-                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500" 
-                  />
+                  <div className="flex justify-between items-center"><label className="text-xs font-bold text-slate-500 uppercase">目標成本率 (Cost Rate)</label><div className="flex items-center gap-2"><button onClick={() => setTargetCostRate(Math.max(10, targetCostRate - 5))} className="w-6 h-6 rounded bg-slate-800 text-slate-400 flex items-center justify-center border border-slate-700 hover:text-white">-</button><span className="text-amber-500 font-bold font-mono w-8 text-center">{targetCostRate}%</span><button onClick={() => setTargetCostRate(Math.min(100, targetCostRate + 5))} className="w-6 h-6 rounded bg-slate-800 text-slate-400 flex items-center justify-center border border-slate-700 hover:text-white">+</button></div></div>
+                  <input type="range" min="10" max="80" step="1" value={targetCostRate} onChange={e => setTargetCostRate(Number(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500" />
                </div>
              </div>
-
              <div className="bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 shadow-lg shadow-black/20">
                 <table className="w-full text-sm">
-                   <thead>
-                      <tr className="bg-slate-900 border-b border-slate-700">
-                         <th className="p-4 text-left font-bold text-slate-400">規格</th>
-                         <th className="p-4 text-right font-bold text-slate-400">成本</th>
-                         <th className="p-4 text-right font-bold text-amber-500">建議售價</th>
-                      </tr>
-                   </thead>
+                   <thead><tr className="bg-slate-900 border-b border-slate-700"><th className="p-4 text-left font-bold text-slate-400">規格</th><th className="p-4 text-right font-bold text-slate-400">成本</th><th className="p-4 text-right font-bold text-amber-500">建議售價</th></tr></thead>
                    <tbody className="divide-y divide-slate-700/50">
-                      {[
-                        { label: '1 ml', vol: 1 },
-                        { label: '30 ml (Shot)', vol: 30 },
-                        { label: '50 ml (Single)', vol: 50 },
-                        { label: '60 ml (Double)', vol: 60 },
-                        { label: '整瓶 (Bottle)', vol: safeNumber(volume) || 700 }
-                      ].map((row, idx) => {
-                         const p = safeNumber(price);
-                         const v = safeNumber(volume) || 1;
-                         const cost = (p / v) * row.vol;
-                         const rate = safeNumber(targetCostRate) / 100 || 0.25;
-                         const sellPrice = p > 0 ? Math.ceil((cost / rate) / 10) * 10 : 0;
-                         
+                      {[{ label: '1 ml', vol: 1 }, { label: '30 ml (Shot)', vol: 30 }, { label: '50 ml (Single)', vol: 50 }, { label: '60 ml (Double)', vol: 60 }, { label: '整瓶 (Bottle)', vol: safeNumber(volume) || 700 }].map((row, idx) => {
+                         const p = safeNumber(price); const v = safeNumber(volume) || 1; const cost = (p / v) * row.vol; const rate = safeNumber(targetCostRate) / 100 || 0.25; const sellPrice = p > 0 ? Math.ceil((cost / rate) / 10) * 10 : 0;
                          return (
                             <tr key={idx} className="hover:bg-slate-700/30 transition-colors">
-                               <td className="p-4 text-slate-200 font-medium">
-                                  {row.label}
-                                  {idx === 4 && <span className="block text-[10px] text-slate-500 font-normal">Based on {targetCostRate}% CR</span>}
-                               </td>
+                               <td className="p-4 text-slate-200 font-medium">{row.label}{idx === 4 && <span className="block text-[10px] text-slate-500 font-normal">Based on {targetCostRate}% CR</span>}</td>
                                <td className="p-4 text-right text-slate-400 font-mono">${cost.toFixed(1)}</td>
-                               <td className="p-4 text-right">
-                                  <div className="text-amber-400 font-bold font-mono text-lg">${sellPrice}</div>
-                               </td>
+                               <td className="p-4 text-right"><div className="text-amber-400 font-bold font-mono text-lg">${sellPrice}</div></td>
                             </tr>
                          );
                       })}
@@ -1292,53 +984,19 @@ const QuickCalcScreen = ({ ingredients }) => {
              <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-500 uppercase">調製法</label>
                 <div className="flex gap-2">
-                  {['Shake', 'Stir', 'Build'].map(t => (
-                    <button key={t} onClick={()=>setTechnique(t)} className={`flex-1 py-2 rounded-lg text-sm border ${technique===t ? 'bg-slate-700 border-amber-500 text-white' : 'border-slate-700 text-slate-500'}`}>{t}</button>
-                  ))}
+                  {['Shake', 'Stir', 'Build'].map(t => (<button key={t} onClick={()=>setTechnique(t)} className={`flex-1 py-2 rounded-lg text-sm border ${technique===t ? 'bg-slate-700 border-amber-500 text-white' : 'border-slate-700 text-slate-500'}`}>{t}</button>))}
                 </div>
              </div>
-
              <div className="space-y-3">
                 {draftIngs.map((item, idx) => {
                    const ing = ingredients.find(i => i.id === item.id);
-                   return (
-                     <div key={idx} className="flex gap-2 items-center animate-slide-up">
-                        <div className="flex-1 p-3 bg-slate-800 rounded-xl border border-slate-700 text-sm">{ing?.nameZh}</div>
-                        <input 
-                          type="number"
-                          value={item.amount}
-                          onChange={e => updateDraftAmount(idx, Number(e.target.value))}
-                          className="w-20 p-3 bg-slate-800 rounded-xl border border-slate-700 text-center font-mono outline-none focus:border-amber-500"
-                        />
-                        <button onClick={() => removeDraftIng(idx)} className="p-3 text-rose-500 bg-slate-800 rounded-xl border border-slate-700 hover:bg-rose-900/20"><Trash2 size={18}/></button>
-                     </div>
-                   );
+                   return (<div key={idx} className="flex gap-2 items-center animate-slide-up"><div className="flex-1 p-3 bg-slate-800 rounded-xl border border-slate-700 text-sm">{ing?.nameZh}</div><input type="number" value={item.amount} onChange={e => updateDraftAmount(idx, Number(e.target.value))} className="w-20 p-3 bg-slate-800 rounded-xl border border-slate-700 text-center font-mono outline-none focus:border-amber-500"/><button onClick={() => removeDraftIng(idx)} className="p-3 text-rose-500 bg-slate-800 rounded-xl border border-slate-700 hover:bg-rose-900/20"><Trash2 size={18}/></button></div>);
                 })}
-                
-                <select 
-                   className="w-full p-3 bg-slate-800/50 border border-dashed border-slate-600 rounded-xl text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-center appearance-none cursor-pointer"
-                   onChange={e => { addDraftIng(e.target.value); e.target.value = ''; }}
-                >
-                   <option value="">+ 加入材料</option>
-                   {ingredients.map(i => <option key={i.id} value={i.id}>{i.nameZh}</option>)}
-                </select>
+                <select className="w-full p-3 bg-slate-800/50 border border-dashed border-slate-600 rounded-xl text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-center appearance-none cursor-pointer" onChange={e => { addDraftIng(e.target.value); e.target.value = ''; }}><option value="">+ 加入材料</option>{ingredients.map(i => <option key={i.id} value={i.id}>{i.nameZh}</option>)}</select>
              </div>
-
              <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 mt-6 shadow-xl">
-                 <div className="grid grid-cols-2 gap-6 mb-4">
-                    <div>
-                       <div className="text-xs text-slate-500 mb-1">總成本</div>
-                       <div className="text-2xl font-mono text-rose-400 font-bold">${draftStats.cost}</div>
-                    </div>
-                    <div className="text-right">
-                       <div className="text-xs text-slate-500 mb-1">總容量 (含融水)</div>
-                       <div className="text-2xl font-mono text-blue-400 font-bold">{draftStats.volume}ml</div>
-                    </div>
-                 </div>
-                 <div className="pt-4 border-t border-slate-700 flex justify-between items-center">
-                    <span className="text-slate-400 text-sm">預估酒精濃度</span>
-                    <span className="text-xl font-bold text-amber-500">{draftStats.finalAbv.toFixed(1)}%</span>
-                 </div>
+                 <div className="grid grid-cols-2 gap-6 mb-4"><div><div className="text-xs text-slate-500 mb-1">總成本</div><div className="text-2xl font-mono text-rose-400 font-bold">${draftStats.cost}</div></div><div className="text-right"><div className="text-xs text-slate-500 mb-1">總容量 (含融水)</div><div className="text-2xl font-mono text-blue-400 font-bold">{draftStats.volume}ml</div></div></div>
+                 <div className="pt-4 border-t border-slate-700 flex justify-between items-center"><span className="text-slate-400 text-sm">預估酒精濃度</span><span className="text-xl font-bold text-amber-500">{draftStats.finalAbv.toFixed(1)}%</span></div>
              </div>
           </div>
         )}
@@ -1403,7 +1061,7 @@ const EditorSheet = ({
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
-      img.onload = async () => {
+      img.onload = () => {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
@@ -1428,16 +1086,7 @@ const EditorSheet = ({
         ctx.drawImage(img, 0, 0, width, height);
         
         const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
-        
-        try {
-            const imgId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            await ImageDB.save(imgId, dataUrl);
-            setItem({ ...item, image: imgId }); 
-        } catch (err) {
-            console.error("Failed to save image to DB", err);
-            if (showAlert) showAlert('錯誤', '無法儲存圖片到資料庫');
-            else alert('無法儲存圖片到資料庫');
-        }
+        setItem({ ...item, image: dataUrl });
       };
       img.src = event.target.result;
     };
@@ -1495,28 +1144,22 @@ const EditorSheet = ({
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full h-48 bg-slate-800 rounded-2xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer transition-colors hover:border-slate-500 active:scale-[0.99]"
               >
-                  <AsyncImage 
-                    imageId={item.image}
-                    className="w-full h-full object-cover"
-                    fallback={
-                        <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
-                           <div className="p-4 bg-slate-700/50 rounded-full mb-2"><Camera size={32} /></div>
-                           <span className="text-xs font-bold">點擊拍照或上傳</span>
-                        </div>
-                    }
-                  />
-                  {item.image && (
+                  {item.image ? (
+                    <>
+                      <img src={item.image} className="w-full h-full object-cover" alt="Preview" />
                       <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <span className="text-white text-sm font-bold flex items-center gap-2"><Camera size={18}/> 更換照片</span>
                       </div>
+                    </>
+                  ) : (
+                    <div className="text-slate-500 flex flex-col items-center">
+                      <div className="p-4 bg-slate-700/50 rounded-full mb-2">
+                        <Camera size={32} />
+                      </div>
+                      <span className="text-xs font-bold">點擊拍照或上傳</span>
+                    </div>
                   )}
               </div>
-              {/* Short ID Confirmation */}
-              {item.image && typeof item.image === 'string' && item.image.startsWith('img_') && (
-                <div className="text-center text-[10px] text-emerald-500 flex items-center justify-center gap-1">
-                   <Check size={10}/> 已儲存至資料庫 ({item.image.substring(0, 12)}...)
-                </div>
-              )}
            </div>
 
            {/* Basic Info */}
@@ -1810,12 +1453,13 @@ const ViewerOverlay = ({ item, onClose, ingredients, startEdit, requestDelete })
           {/* Hero Image */}
           <div className="relative h-72 shrink-0">
              <AsyncImage 
-                imageId={item.image} 
-                alt={item.nameZh}
-                className="w-full h-full object-cover"
+               imageId={item.image}
+               alt={item.nameZh}
+               className="w-full h-full object-cover"
              />
              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent"></div>
              
+             {/* FIX: Corrected positioning classes for the back button */}
              <button 
                onClick={onClose} 
                className="absolute top-4 left-4 mt-safe p-2 bg-black/30 backdrop-blur rounded-full text-white hover:bg-white/20 transition z-50 shadow-lg"
@@ -1923,37 +1567,9 @@ function MainAppContent() {
     } catch (e) { return 'recipes'; }
   });
   
-  // Initialize state from localStorage directly (No Empty Flash)
-  const [ingredients, setIngredients] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('bar_ingredients_v3') || '[]'); } catch { return []; }
-  });
-  const [recipes, setRecipes] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('bar_recipes_v3') || '[]'); } catch { return []; }
-  });
-  const [sections, setSections] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('bar_sections_v3') || '[]'); } catch { return []; }
-  });
-  
-  const [availableTags, setAvailableTags] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('bar_tags_v3')) || ['酸甜 Sour/Sweet', '草本 Herbal', '果香 Fruity', '煙燻 Smoky', '辛辣 Spicy', '苦味 Bitter']; } catch { return []; }
-  });
-  const [availableTechniques, setAvailableTechniques] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('bar_techniques_v3')) || ['Shake', 'Stir', 'Build', 'Roll', 'Blend']; } catch { return []; }
-  });
-  const [availableGlasses, setAvailableGlasses] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('bar_glasses_v3')) || ['Martini', 'Coupe', 'Rock', 'Highball', 'Collins', 'Shot']; } catch { return []; }
-  });
-  const [availableBases, setAvailableBases] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('bar_bases_v1')) || DEFAULT_BASE_SPIRITS; } catch { return DEFAULT_BASE_SPIRITS; }
-  });
-  
-  const [ingCategories, setIngCategories] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('bar_ing_cats_v3')) || [
-      { id: 'alcohol', label: '基酒 Alcohol' },
-      { id: 'soft', label: '軟性飲料 Soft' },
-      { id: 'other', label: '其他 Other' }
-    ]; } catch { return []; }
-  });
+  const [ingredients, setIngredients] = useState([]);
+  const [recipes, setRecipes] = useState([]);
+  const [sections, setSections] = useState([]);
 
   // Editor State
   const [editorMode, setEditorMode] = useState(null); // 'ingredient' | 'recipe'
@@ -1966,10 +1582,42 @@ function MainAppContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [recipeCategoryFilter, setRecipeCategoryFilter] = useState('all');
   
+  // Global Lists - Dynamic
+  const [availableTags, setAvailableTags] = useState(['酸甜 Sour/Sweet', '草本 Herbal', '果香 Fruity', '煙燻 Smoky', '辛辣 Spicy', '苦味 Bitter']);
+  const [availableTechniques, setAvailableTechniques] = useState(['Shake', 'Stir', 'Build', 'Roll', 'Blend']);
+  const [availableGlasses, setAvailableGlasses] = useState(['Martini', 'Coupe', 'Rock', 'Highball', 'Collins', 'Shot']);
+  const [availableBases, setAvailableBases] = useState(DEFAULT_BASE_SPIRITS);
+  
+  const [ingCategories, setIngCategories] = useState([
+    { id: 'alcohol', label: '基酒 Alcohol' },
+    { id: 'soft', label: '軟性飲料 Soft' },
+    { id: 'other', label: '其他 Other' }
+  ]);
+
   // Dialog System
   const [dialog, setDialog] = useState({ isOpen: false, type: 'info', title: '', message: '', onConfirm: null });
 
-  // Safe Persist Function
+  // Load Data
+  useEffect(() => {
+    const load = (key, setter) => {
+       try {
+         const data = localStorage.getItem(key);
+         if (data) setter(JSON.parse(data));
+       } catch (e) {
+         console.error(`Error loading ${key}:`, e);
+       }
+    };
+    load('bar_ingredients_v3', setIngredients);
+    load('bar_recipes_v3', setRecipes);
+    load('bar_sections_v3', setSections);
+    load('bar_tags_v3', setAvailableTags);
+    load('bar_ing_cats_v3', setIngCategories);
+    load('bar_techniques_v3', setAvailableTechniques);
+    load('bar_glasses_v3', setAvailableGlasses);
+    load('bar_bases_v1', setAvailableBases); 
+  }, []);
+
+  // Safe Persist Function (returns boolean success)
   const persistData = (key, data) => {
     try {
       localStorage.setItem(key, JSON.stringify(data));
@@ -1982,7 +1630,7 @@ function MainAppContent() {
       return false; 
     }
   };
-
+  
   // Only auto-save non-critical lists via useEffect. Critical data is saved in handlers.
   useEffect(() => { persistData('bar_sections_v3', sections); }, [sections]);
   useEffect(() => { persistData('bar_tags_v3', availableTags); }, [availableTags]);
@@ -2179,12 +1827,12 @@ function MainAppContent() {
         {activeTab === 'tools' && (
            <div className="h-full flex flex-col overflow-y-auto p-6 text-center space-y-6 pt-20 w-full custom-scrollbar pb-24">
              <div className="w-20 h-20 bg-slate-800 rounded-full mx-auto flex items-center justify-center border border-slate-700 shadow-lg shadow-amber-900/10"><Wine size={32} className="text-amber-500"/></div>
-             <h2 className="text-xl font-serif text-slate-200">Bar Manager v8.3</h2>
+             <h2 className="text-xl font-serif text-slate-200">Bar Manager v8.4 (DB Enabled)</h2>
              
              {/* Storage Indicator */}
              <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 w-full">
                 <div className="flex justify-between items-center text-xs text-slate-400 mb-2">
-                   <span>儲存空間使用量 (大約)</span>
+                   <span>文字儲存空間使用量 (大約)</span>
                    <span>{(JSON.stringify(localStorage).length / 1024 / 1024).toFixed(2)} MB / 5.0 MB</span>
                 </div>
                 <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -2193,8 +1841,8 @@ function MainAppContent() {
                      style={{ width: `${Math.min(100, (JSON.stringify(localStorage).length / (5 * 1024 * 1024)) * 100)}%` }}
                    />
                 </div>
-                <p className="text-[10px] text-slate-500 mt-2 text-left">
-                   注意：圖片已移至資料庫，不再佔用此空間。這裡僅顯示文字資料用量。
+                <p className="text-[10px] text-emerald-500 mt-2 text-left flex items-center gap-1">
+                   <Database size={12}/> 圖片資料庫 (IndexedDB) 已啟用，圖片儲存無上限。
                 </p>
              </div>
 
