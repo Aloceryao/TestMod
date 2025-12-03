@@ -114,6 +114,7 @@ const useImageLoader = (imageId) => {
       setSrc(null);
       return;
     }
+    // Optimization: If it's already a data URL (e.g. during preview before save), use it directly
     if (imageId.startsWith('data:') || imageId.startsWith('http')) {
       setSrc(imageId);
       return;
@@ -307,7 +308,7 @@ const IngredientRow = memo(({ ing, onClick, onDelete }) => (
        </button>
     </div>
   </div>
-), (prev, next) => prev.ing === next.ing);
+));
 
 const RecipeCard = memo(({ recipe, ingredients, onClick }) => {
   const stats = useMemo(() => calculateRecipeStats(recipe, ingredients), [recipe, ingredients]);
@@ -356,7 +357,7 @@ const RecipeCard = memo(({ recipe, ingredients, onClick }) => {
       </div>
     </div>
   );
-}, (prev, next) => prev.recipe === next.recipe && prev.ingredients === next.ingredients);
+});
 
 const Badge = ({ children, color = 'slate', className='' }) => {
   const colors = {
@@ -855,7 +856,7 @@ const RecipeListScreen = ({
            ))}
         </div>
 
-        {(showFilters || recipeCategoryFilter === 'all') && !showGrid && recipeCategoryFilter !== 'single' && (
+        {showFilters && !showGrid && recipeCategoryFilter !== 'single' && (
           <div className="p-4 bg-slate-900 border-b border-slate-800 animate-slide-up w-full">
              <div className="mb-4"><ChipSelector title="基酒篩選 (Base)" options={availableBases} selected={filterBases} onSelect={setFilterBases} /></div>
              <div><ChipSelector title="風味篩選 (Flavor)" options={availableTags} selected={filterTags} onSelect={setFilterTags} /></div>
@@ -890,7 +891,6 @@ const RecipeListScreen = ({
 };
 
 const InventoryScreen = ({ ingredients, startEdit, requestDelete, ingCategories, setIngCategories, showConfirm, onBatchAdd, availableBases }) => {
-  // ... Same as before ...
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [isAddingCat, setIsAddingCat] = useState(false);
   const [newCatName, setNewCatName] = useState('');
@@ -1034,6 +1034,7 @@ const EditorSheet = ({
   // Inline Add States
   const [addingItem, setAddingItem] = useState(null); // 'technique' | 'glass' | 'tag' | 'base'
   const [newItemValue, setNewItemValue] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   if (!mode || !item) return null;
 
@@ -1086,6 +1087,8 @@ const EditorSheet = ({
         ctx.drawImage(img, 0, 0, width, height);
         
         const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+        // We set the full data URL here for PREVIEW purposes, 
+        // but we will intercept it in onSave to store in DB.
         setItem({ ...item, image: dataUrl });
       };
       img.src = event.target.result;
@@ -1114,6 +1117,15 @@ const EditorSheet = ({
     else setItem({ ...item, tags: [...tags, tag] });
   };
 
+  const handleSaveWrapper = async () => {
+    setIsSaving(true);
+    try {
+      await onSave();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const stats = mode === 'recipe' ? calculateRecipeStats(item, ingredients) : null;
 
   return (
@@ -1125,7 +1137,9 @@ const EditorSheet = ({
         <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900 z-10 pt-safe">
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition"><X size={24}/></button>
           <h2 className="text-lg font-bold text-white font-serif">{mode === 'recipe' ? '編輯酒譜' : '編輯材料'}</h2>
-          <button onClick={onSave} className="p-2 text-amber-500 hover:text-amber-400 bg-amber-900/20 rounded-full hover:bg-amber-900/40 transition"><Check size={24}/></button>
+          <button onClick={handleSaveWrapper} disabled={isSaving} className="p-2 text-amber-500 hover:text-amber-400 bg-amber-900/20 rounded-full hover:bg-amber-900/40 transition disabled:opacity-50">
+            {isSaving ? <RefreshCcw className="animate-spin" size={24} /> : <Check size={24}/>}
+          </button>
         </div>
 
         {/* Form Content */}
@@ -1146,7 +1160,11 @@ const EditorSheet = ({
               >
                   {item.image ? (
                     <>
-                      <img src={item.image} className="w-full h-full object-cover" alt="Preview" />
+                      {item.image.startsWith('data:') ? (
+                         <img src={item.image} className="w-full h-full object-cover" alt="Preview" />
+                      ) : (
+                         <AsyncImage imageId={item.image} className="w-full h-full object-cover" />
+                      )}
                       <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <span className="text-white text-sm font-bold flex items-center gap-2"><Camera size={18}/> 更換照片</span>
                       </div>
@@ -1654,10 +1672,26 @@ function MainAppContent() {
     }
   };
 
-  const requestDelete = (id, type) => {
+  const requestDelete = async (id, type) => {
     const title = type === 'recipe' ? '刪除酒譜' : '刪除材料';
-    showConfirm(title, '確定要刪除嗎？此動作無法復原。', () => {
+    
+    // Check if ingredient is in use before deleting
+    if (type === 'ingredient') {
+      const inUseRecipes = recipes.filter(r => r.ingredients && r.ingredients.some(ing => ing.id === id));
+      if (inUseRecipes.length > 0) {
+         showAlert('無法刪除', `此材料正在被以下酒譜使用：\n${inUseRecipes.map(r => r.nameZh).join(', ')}\n\n請先將其從酒譜中移除。`);
+         return;
+      }
+    }
+
+    showConfirm(title, '確定要刪除嗎？此動作無法復原。', async () => {
        if (type === 'recipe') {
+         // Cleanup Image
+         const recipeToDelete = recipes.find(r => r.id === id);
+         if (recipeToDelete && recipeToDelete.image && !recipeToDelete.image.startsWith('data:')) {
+            await ImageDB.delete(recipeToDelete.image);
+         }
+
          const newList = recipes.filter(r => r.id !== id);
          setRecipes(newList);
          persistData('bar_recipes_v3', newList);
@@ -1728,32 +1762,54 @@ function MainAppContent() {
     }
   };
 
-  const saveItem = () => {
+  const saveItem = async () => {
     if (!editingItem.nameZh) return showAlert('錯誤', '請輸入名稱');
     
+    // CRITICAL FIX: Image Handling
+    // If the image is a base64 string (newly uploaded), save it to IndexedDB
+    // and replace the content with the key ID before saving to localStorage.
+    let itemToSave = { ...editingItem };
+    
+    if (itemToSave.image && itemToSave.image.startsWith('data:')) {
+       try {
+         // Using the item ID as the image key makes sense for 1-to-1 relationships
+         await ImageDB.save(itemToSave.id, itemToSave.image);
+         // Only store the ID in localStorage to save space
+         itemToSave.image = itemToSave.id;
+       } catch (e) {
+         console.error("Image Save Failed", e);
+         showAlert('儲存失敗', '圖片資料庫錯誤，請重試');
+         return;
+       }
+    }
+
     let newList;
     let key;
     
     if (editorMode === 'ingredient') {
        key = 'bar_ingredients_v3';
-       const exists = ingredients.find(i => i.id === editingItem.id);
-       newList = exists ? ingredients.map(i => i.id === editingItem.id ? editingItem : i) : [...ingredients, editingItem];
+       const exists = ingredients.find(i => i.id === itemToSave.id);
+       newList = exists ? ingredients.map(i => i.id === itemToSave.id ? itemToSave : i) : [...ingredients, itemToSave];
     } else {
        key = 'bar_recipes_v3';
-       const exists = recipes.find(r => r.id === editingItem.id);
-       newList = exists ? recipes.map(r => r.id === editingItem.id ? editingItem : r) : [...recipes, editingItem];
+       const exists = recipes.find(r => r.id === itemToSave.id);
+       newList = exists ? recipes.map(r => r.id === itemToSave.id ? itemToSave : r) : [...recipes, itemToSave];
     }
 
     if (persistData(key, newList)) {
        if (editorMode === 'ingredient') setIngredients(newList);
        else {
          setRecipes(newList);
-         if (viewingItem && viewingItem.id === editingItem.id) setViewingItem(editingItem);
+         // Update viewing item if we were editing it, but need to make sure image logic holds
+         if (viewingItem && viewingItem.id === itemToSave.id) {
+            // Keep the preview alive if needed, or reload? Reload is safer.
+            setViewingItem(itemToSave);
+         }
        }
        setEditorMode(null);
        setEditingItem(null);
     } else {
-       showAlert('儲存失敗', '儲存空間已滿！請刪除一些舊的照片或酒譜，或者嘗試不使用照片。');
+       showAlert('儲存失敗', '儲存空間已滿！請刪除一些舊的資料。');
     }
   };
 
@@ -1827,7 +1883,7 @@ function MainAppContent() {
         {activeTab === 'tools' && (
            <div className="h-full flex flex-col overflow-y-auto p-6 text-center space-y-6 pt-20 w-full custom-scrollbar pb-24">
              <div className="w-20 h-20 bg-slate-800 rounded-full mx-auto flex items-center justify-center border border-slate-700 shadow-lg shadow-amber-900/10"><Wine size={32} className="text-amber-500"/></div>
-             <h2 className="text-xl font-serif text-slate-200">Bar Manager v8.4 (DB Enabled)</h2>
+             <h2 className="text-xl font-serif text-slate-200">Bar Manager v8.5 (Fixed)</h2>
              
              {/* Storage Indicator */}
              <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 w-full">
@@ -1842,7 +1898,7 @@ function MainAppContent() {
                    />
                 </div>
                 <p className="text-[10px] text-emerald-500 mt-2 text-left flex items-center gap-1">
-                   <Database size={12}/> 圖片資料庫 (IndexedDB) 已啟用，圖片儲存無上限。
+                   <Database size={12}/> 圖片資料庫 (IndexedDB) 已修復並啟用。
                 </p>
              </div>
 
