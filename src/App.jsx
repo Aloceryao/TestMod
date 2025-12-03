@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, memo } from 'react';
+import React, { useState, useEffect, useMemo, memo, useRef } from 'react';
 import { 
   Beer, 
   GlassWater, 
@@ -1434,10 +1434,58 @@ const EditorSheet = ({
   setIngCategories,
   showAlert 
 }) => {
-  const [showImageInput, setShowImageInput] = useState(false);
-  const [tempImage, setTempImage] = useState('');
+  const fileInputRef = useRef(null);
 
   if (!mode) return null;
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // 檢查檔案大小 (限制 10MB，但我們會壓縮)
+    if (file.size > 10 * 1024 * 1024) {
+      if(showAlert) showAlert('錯誤', '圖片太大，請選擇小於 10MB 的照片');
+      else alert('圖片太大');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // 建立 Canvas 進行壓縮
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const MAX_WIDTH = 800; // 限制最大寬度
+        const MAX_HEIGHT = 800;
+
+        // 計算縮放比例
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // 輸出為 JPEG, 品質 0.7
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        setItem({ ...item, image: dataUrl });
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleRecipeIngChange = (idx, field, value) => {
     const newIngs = [...item.ingredients];
@@ -1477,46 +1525,35 @@ const EditorSheet = ({
         {/* Form Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-safe-offset custom-scrollbar">
            
-           {/* Image Section - Custom Input UI */}
+           {/* Image Section - File Upload UI */}
            <div className="space-y-2">
+              <input 
+                type="file" 
+                ref={fileInputRef}
+                onChange={handleImageUpload}
+                accept="image/*"
+                className="hidden"
+              />
               <div 
-                onClick={() => { setTempImage(item.image); setShowImageInput(true); }}
-                className="w-full h-48 bg-slate-800 rounded-2xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer transition-colors hover:border-slate-500"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full h-48 bg-slate-800 rounded-2xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer transition-colors hover:border-slate-500 active:scale-[0.99]"
               >
                   {item.image ? (
                     <>
                       <img src={item.image} className="w-full h-full object-cover" alt="Preview" />
                       <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="text-white text-sm font-bold">點擊更換圖片</span>
+                        <span className="text-white text-sm font-bold flex items-center gap-2"><Camera size={18}/> 更換照片</span>
                       </div>
                     </>
                   ) : (
                     <div className="text-slate-500 flex flex-col items-center">
-                      <Camera size={32} className="mb-2"/>
-                      <span className="text-xs">上傳圖片 (URL)</span>
+                      <div className="p-4 bg-slate-700/50 rounded-full mb-2">
+                        <Camera size={32} />
+                      </div>
+                      <span className="text-xs font-bold">點擊拍照或上傳</span>
                     </div>
                   )}
               </div>
-              
-              {/* Image URL Input Area (Visible only when editing image) */}
-              {showImageInput && (
-                <div className="animate-slide-up bg-slate-800 p-3 rounded-xl border border-slate-700 flex gap-2">
-                  <input 
-                    autoFocus
-                    value={tempImage}
-                    onChange={(e) => setTempImage(e.target.value)}
-                    placeholder="https://..."
-                    className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500"
-                  />
-                  <button 
-                    onClick={() => { setItem({...item, image: tempImage}); setShowImageInput(false); }}
-                    className="bg-amber-600 text-white px-3 rounded-lg text-xs font-bold"
-                  >
-                    確定
-                  </button>
-                  <button onClick={() => setShowImageInput(false)} className="p-2 text-slate-400 hover:text-white"><X size={16}/></button>
-                </div>
-              )}
            </div>
 
            {/* Basic Info */}
