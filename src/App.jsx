@@ -34,7 +34,7 @@ import {
   LayoutGrid,
   ListPlus,
   ArrowLeft,
-  Image as ImageIcon // Renamed to avoid conflict with Image object
+  Image as ImageIcon 
 } from 'lucide-react';
 
 // ==========================================
@@ -1436,7 +1436,8 @@ const EditorSheet = ({
 }) => {
   const fileInputRef = useRef(null);
 
-  if (!mode) return null;
+  // FIX: Guard clause to prevent crash if item is null
+  if (!mode || !item) return null;
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -1457,8 +1458,9 @@ const EditorSheet = ({
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-        const MAX_WIDTH = 800; // 限制最大寬度
-        const MAX_HEIGHT = 800;
+        // 加強壓縮：限制最大寬度為 600px，以節省 LocalStorage 空間
+        const MAX_WIDTH = 600; 
+        const MAX_HEIGHT = 600;
 
         // 計算縮放比例
         if (width > height) {
@@ -1478,8 +1480,8 @@ const EditorSheet = ({
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
         
-        // 輸出為 JPEG, 品質 0.7
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        // 輸出為 JPEG, 品質調降至 0.5 以避免 QuotaExceededError
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
         setItem({ ...item, image: dataUrl });
       };
       img.src = event.target.result;
@@ -1646,7 +1648,7 @@ const EditorSheet = ({
                     </div>
                     
                     <div className="space-y-2">
-                       {item.ingredients.map((ingItem, idx) => (
+                       {item.ingredients && item.ingredients.map((ingItem, idx) => (
                           <div key={idx} className="flex gap-2 items-center animate-slide-up">
                              <select 
                                value={ingItem.id} 
@@ -1701,8 +1703,6 @@ const EditorSheet = ({
                        <div className="flex justify-between">
                          <label className="text-xs font-bold text-slate-500 uppercase">調製法</label>
                          <button onClick={() => {
-                           // Replaced prompt with window.prompt for clarity, though modal would be better for consistency.
-                           // Keeping simple prompt for technique for now as user complained about photo specifically.
                            const t = prompt('新增調製法:');
                            if(t) setAvailableTechniques([...availableTechniques, t]);
                          }} className="text-[10px] text-amber-500">新增</button>
@@ -1954,8 +1954,12 @@ function MainAppContent() {
   // Load Data
   useEffect(() => {
     const load = (key, setter) => {
-       const data = localStorage.getItem(key);
-       if (data) setter(JSON.parse(data));
+       try {
+         const data = localStorage.getItem(key);
+         if (data) setter(JSON.parse(data));
+       } catch (e) {
+         console.error(`Error loading ${key}:`, e);
+       }
     };
     load('bar_ingredients_v3', setIngredients);
     load('bar_recipes_v3', setRecipes);
@@ -1964,13 +1968,25 @@ function MainAppContent() {
     load('bar_ing_cats_v3', setIngCategories);
   }, []);
 
-  // Save Data
-  useEffect(() => localStorage.setItem('bar_ingredients_v3', JSON.stringify(ingredients)), [ingredients]);
-  useEffect(() => localStorage.setItem('bar_recipes_v3', JSON.stringify(recipes)), [recipes]);
-  useEffect(() => localStorage.setItem('bar_sections_v3', JSON.stringify(sections)), [sections]);
-  useEffect(() => localStorage.setItem('bar_tags_v3', JSON.stringify(availableTags)), [availableTags]);
-  useEffect(() => localStorage.setItem('bar_ing_cats_v3', JSON.stringify(ingCategories)), [ingCategories]);
-  useEffect(() => localStorage.setItem('bar_active_tab_v3', activeTab), [activeTab]);
+  // Save Data with Safety Check (防止白屏當機)
+  const safeSave = (key, data) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {
+      console.error("Storage failed:", e);
+      // 如果是因為空間滿了，提示使用者
+      if (e.name === 'QuotaExceededError' || e.code === 22) {
+        alert("儲存空間已滿！無法儲存這張照片或資料。請刪除一些舊的酒譜或照片後再試。");
+      }
+    }
+  };
+
+  useEffect(() => safeSave('bar_ingredients_v3', ingredients), [ingredients]);
+  useEffect(() => safeSave('bar_recipes_v3', recipes), [recipes]);
+  useEffect(() => safeSave('bar_sections_v3', sections), [sections]);
+  useEffect(() => safeSave('bar_tags_v3', availableTags), [availableTags]);
+  useEffect(() => safeSave('bar_ing_cats_v3', ingCategories), [ingCategories]);
+  useEffect(() => safeSave('bar_active_tab_v3', activeTab), [activeTab]);
 
   const closeDialog = () => setDialog({ ...dialog, isOpen: false });
   const showConfirm = (title, message, onConfirm) => setDialog({ isOpen: true, type: 'confirm', title, message, onConfirm });
@@ -2130,7 +2146,7 @@ function MainAppContent() {
         {activeTab === 'tools' && (
            <div className="h-full flex flex-col overflow-y-auto p-6 text-center space-y-6 pt-20 w-full custom-scrollbar pb-24">
              <div className="w-20 h-20 bg-slate-800 rounded-full mx-auto flex items-center justify-center border border-slate-700 shadow-lg shadow-amber-900/10"><Wine size={32} className="text-amber-500"/></div>
-             <h2 className="text-xl font-serif text-slate-200">Bar Manager v8.0</h2>
+             <h2 className="text-xl font-serif text-slate-200">Bar Manager v8.1</h2>
              <div className="space-y-3">
                <button onClick={() => { const data = JSON.stringify({ingredients, recipes, sections}); const blob = new Blob([data], {type: 'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `bar_backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); }} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl flex items-center gap-4 hover:bg-slate-700 transition"><Download className="text-blue-400"/><div className="text-left"><div className="text-slate-200 font-bold">匯出數據</div><div className="text-xs text-slate-500">備份到手機</div></div></button>
                
