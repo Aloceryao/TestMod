@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 
 // ==========================================
-// 0. IndexedDB Image Storage (解決容量問題的核心)
+// 0. IndexedDB Image Storage
 // ==========================================
 
 const DB_NAME = 'BarManagerDB';
@@ -132,7 +132,7 @@ const useImageLoader = (imageId) => {
   return src;
 };
 
-// Component to display Async Images (Used in Cards, Viewer, and Editor)
+// Component to display Async Images
 const AsyncImage = ({ imageId, alt, className, fallback }) => {
   const src = useImageLoader(imageId);
   
@@ -174,28 +174,12 @@ class ErrorBoundary extends React.Component {
           </div>
           <h1 className="text-2xl font-bold mb-2">應用程式發生錯誤</h1>
           <p className="text-slate-400 mb-8 text-sm leading-relaxed max-w-xs">
-            可能是資料讀取錯誤。請嘗試重新整理，或重置資料。<br/>您的照片存放在資料庫中，應該是安全的。
+            發生了未預期的錯誤。<br/>請嘗試重新整理頁面。
           </p>
           <div className="flex flex-col gap-3 w-full max-w-xs">
              <button onClick={() => window.location.reload()} className="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-xl font-bold text-white shadow-lg">
                重新整理頁面
              </button>
-             <button 
-               onClick={() => { 
-                 if(confirm('警告：這將會清除所有設定資料並重置 APP (照片不會被刪除，但連結可能會遺失)。確定要繼續嗎？')) {
-                   localStorage.clear(); 
-                   window.location.reload(); 
-                 }
-               }} 
-               className="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-slate-400"
-             >
-               重置設定資料 (修復)
-             </button>
-          </div>
-          <div className="mt-8 p-4 bg-black/50 rounded-xl border border-slate-800 w-full max-w-xs text-left overflow-hidden">
-            <p className="text-[10px] font-mono text-rose-400 break-all">
-              {this.state.error?.toString()}
-            </p>
           </div>
         </div>
       );
@@ -349,7 +333,6 @@ const RecipeCard = memo(({ recipe, ingredients, onClick }) => {
              
              <div className="flex flex-col items-end gap-1 shrink-0">
                 <div className="text-amber-400 font-bold text-lg font-mono leading-none">${stats.price}</div>
-                {/* Removed Google Search button to declutter, making card clickable area cleaner */}
              </div>
            </div>
            <p className="text-slate-400 text-xs font-medium tracking-wider uppercase truncate opacity-80 mb-1">{safeString(recipe.nameEn)}</p>
@@ -826,7 +809,8 @@ const RecipeListScreen = ({
               />
            </div>
            
-           {!showGrid && recipeCategoryFilter !== 'single' && (
+           {/* Only show filter button if we are NOT in grid mode */}
+           {!showGrid && (
              <button 
                onClick={() => setShowFilters(!showFilters)} 
                className={`p-2 rounded-xl border transition-colors ${showFilters || filterBases.length > 0 || filterTags.length > 0 ? 'bg-slate-800 border-amber-500/50 text-amber-500' : 'border-slate-800 text-slate-400'}`}
@@ -859,8 +843,8 @@ const RecipeListScreen = ({
            ))}
         </div>
 
-        {/* Show filters if explicitly toggled OR if we are in 'all' tab (since grid is hidden there) */}
-        {(showFilters || recipeCategoryFilter === 'all') && !showGrid && recipeCategoryFilter !== 'single' && (
+        {/* Show filters if explicitly toggled AND we are not in grid view */}
+        {showFilters && !showGrid && (
           <div className="p-4 bg-slate-900 border-b border-slate-800 animate-slide-up w-full">
              <div className="mb-4">
               <ChipSelector 
@@ -1527,6 +1511,12 @@ const EditorSheet = ({
                       </div>
                   )}
               </div>
+              {/* Short ID Confirmation */}
+              {item.image && typeof item.image === 'string' && item.image.startsWith('img_') && (
+                <div className="text-center text-[10px] text-emerald-500 flex items-center justify-center gap-1">
+                   <Check size={10}/> 已儲存至資料庫 ({item.image.substring(0, 12)}...)
+                </div>
+              )}
            </div>
 
            {/* Basic Info */}
@@ -1933,9 +1923,37 @@ function MainAppContent() {
     } catch (e) { return 'recipes'; }
   });
   
-  const [ingredients, setIngredients] = useState([]);
-  const [recipes, setRecipes] = useState([]);
-  const [sections, setSections] = useState([]);
+  // Initialize state from localStorage directly (No Empty Flash)
+  const [ingredients, setIngredients] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bar_ingredients_v3') || '[]'); } catch { return []; }
+  });
+  const [recipes, setRecipes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bar_recipes_v3') || '[]'); } catch { return []; }
+  });
+  const [sections, setSections] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bar_sections_v3') || '[]'); } catch { return []; }
+  });
+  
+  const [availableTags, setAvailableTags] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bar_tags_v3')) || ['酸甜 Sour/Sweet', '草本 Herbal', '果香 Fruity', '煙燻 Smoky', '辛辣 Spicy', '苦味 Bitter']; } catch { return []; }
+  });
+  const [availableTechniques, setAvailableTechniques] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bar_techniques_v3')) || ['Shake', 'Stir', 'Build', 'Roll', 'Blend']; } catch { return []; }
+  });
+  const [availableGlasses, setAvailableGlasses] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bar_glasses_v3')) || ['Martini', 'Coupe', 'Rock', 'Highball', 'Collins', 'Shot']; } catch { return []; }
+  });
+  const [availableBases, setAvailableBases] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bar_bases_v1')) || DEFAULT_BASE_SPIRITS; } catch { return DEFAULT_BASE_SPIRITS; }
+  });
+  
+  const [ingCategories, setIngCategories] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bar_ing_cats_v3')) || [
+      { id: 'alcohol', label: '基酒 Alcohol' },
+      { id: 'soft', label: '軟性飲料 Soft' },
+      { id: 'other', label: '其他 Other' }
+    ]; } catch { return []; }
+  });
 
   // Editor State
   const [editorMode, setEditorMode] = useState(null); // 'ingredient' | 'recipe'
@@ -1948,42 +1966,10 @@ function MainAppContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [recipeCategoryFilter, setRecipeCategoryFilter] = useState('all');
   
-  // Global Lists - Dynamic
-  const [availableTags, setAvailableTags] = useState(['酸甜 Sour/Sweet', '草本 Herbal', '果香 Fruity', '煙燻 Smoky', '辛辣 Spicy', '苦味 Bitter']);
-  const [availableTechniques, setAvailableTechniques] = useState(['Shake', 'Stir', 'Build', 'Roll', 'Blend']);
-  const [availableGlasses, setAvailableGlasses] = useState(['Martini', 'Coupe', 'Rock', 'Highball', 'Collins', 'Shot']);
-  const [availableBases, setAvailableBases] = useState(DEFAULT_BASE_SPIRITS);
-  
-  const [ingCategories, setIngCategories] = useState([
-    { id: 'alcohol', label: '基酒 Alcohol' },
-    { id: 'soft', label: '軟性飲料 Soft' },
-    { id: 'other', label: '其他 Other' }
-  ]);
-
   // Dialog System
   const [dialog, setDialog] = useState({ isOpen: false, type: 'info', title: '', message: '', onConfirm: null });
 
-  // Load Data
-  useEffect(() => {
-    const load = (key, setter) => {
-       try {
-         const data = localStorage.getItem(key);
-         if (data) setter(JSON.parse(data));
-       } catch (e) {
-         console.error(`Error loading ${key}:`, e);
-       }
-    };
-    load('bar_ingredients_v3', setIngredients);
-    load('bar_recipes_v3', setRecipes);
-    load('bar_sections_v3', setSections);
-    load('bar_tags_v3', setAvailableTags);
-    load('bar_ing_cats_v3', setIngCategories);
-    load('bar_techniques_v3', setAvailableTechniques);
-    load('bar_glasses_v3', setAvailableGlasses);
-    load('bar_bases_v1', setAvailableBases); // NEW: Load custom bases
-  }, []);
-
-  // Safe Persist Function (returns boolean success)
+  // Safe Persist Function
   const persistData = (key, data) => {
     try {
       localStorage.setItem(key, JSON.stringify(data));
@@ -1997,7 +1983,7 @@ function MainAppContent() {
     }
   };
 
-  // Only auto-save non-critical (small) lists via useEffect
+  // Only auto-save non-critical lists via useEffect. Critical data is saved in handlers.
   useEffect(() => { persistData('bar_sections_v3', sections); }, [sections]);
   useEffect(() => { persistData('bar_tags_v3', availableTags); }, [availableTags]);
   useEffect(() => { persistData('bar_ing_cats_v3', ingCategories); }, [ingCategories]);
@@ -2026,7 +2012,7 @@ function MainAppContent() {
        if (type === 'recipe') {
          const newList = recipes.filter(r => r.id !== id);
          setRecipes(newList);
-         persistData('bar_recipes_v3', newList); // Always succeeds (deleting frees space)
+         persistData('bar_recipes_v3', newList);
          if (viewingItem?.id === id) setViewingItem(null);
        } else {
          const newList = ingredients.filter(i => i.id !== id);
@@ -2208,7 +2194,7 @@ function MainAppContent() {
                    />
                 </div>
                 <p className="text-[10px] text-slate-500 mt-2 text-left">
-                   注意：這是一個網頁 APP，圖片是儲存在瀏覽器的暫存空間中，而非手機相簿。若清除瀏覽器資料，照片可能會遺失。建議定期使用「匯出數據」備份。
+                   注意：圖片已移至資料庫，不再佔用此空間。這裡僅顯示文字資料用量。
                 </p>
              </div>
 
