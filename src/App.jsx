@@ -58,7 +58,7 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="fixed inset-0 flex flex-col items-center justify-center bg-slate-950 text-white p-6 text-center z-50">
+        <div className="fixed inset-0 flex flex-col items-center justify-center bg-slate-950 text-white p-6 text-center z-[80]">
           <div className="w-20 h-20 bg-rose-900/30 rounded-full flex items-center justify-center mb-6">
             <AlertTriangle size={40} className="text-rose-500" />
           </div>
@@ -98,7 +98,8 @@ class ErrorBoundary extends React.Component {
 // 1. Constants & Helper Functions
 // ==========================================
 
-const BASE_SPIRITS = ['Gin 琴酒', 'Whisky 威士忌', 'Rum 蘭姆酒', 'Tequila 龍舌蘭', 'Vodka 伏特加', 'Brandy 白蘭地', 'Liqueur 利口酒'];
+// Changed from CONSTANT to DEFAULT VALUE
+const DEFAULT_BASE_SPIRITS = ['Gin 琴酒', 'Whisky 威士忌', 'Rum 蘭姆酒', 'Tequila 龍舌蘭', 'Vodka 伏特加', 'Brandy 白蘭地', 'Liqueur 利口酒'];
 
 // --- Icon Registry for Category Blocks ---
 const ICON_TYPES = {
@@ -719,7 +720,8 @@ const CategoryEditModal = ({ isOpen, onClose, onSave, categories }) => {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+    // FIX: Increased z-index to 60 to be above Editor and Viewer
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
        <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl shadow-2xl p-6 animate-scale-in">
           <div className="flex justify-between items-center mb-6">
              <h3 className="text-xl font-bold text-white">新增分類色塊</h3>
@@ -835,7 +837,7 @@ const RecipeListScreen = ({
   startEdit, 
   setViewingItem,
   availableTags,
-  availableBases = BASE_SPIRITS,
+  availableBases, // Updated to use dynamic prop
 }) => {
   const [filterBases, setFilterBases] = useState([]);
   const [filterTags, setFilterTags] = useState([]);
@@ -880,7 +882,8 @@ const RecipeListScreen = ({
   }, [recipeCategoryFilter]);
 
   const isSearching = searchTerm.length > 0;
-  const showGrid = !isSearching && !activeBlock;
+  // Modify logic: Grid shows only if NOT searching, NOT active block selected, AND NOT in 'all' tab
+  const showGrid = !isSearching && !activeBlock && recipeCategoryFilter !== 'all';
 
   const handleBlockSelect = (cat) => {
     setActiveBlock(cat);
@@ -968,7 +971,8 @@ const RecipeListScreen = ({
            ))}
         </div>
 
-        {showFilters && !showGrid && recipeCategoryFilter !== 'single' && (
+        {/* Show filters if explicitly toggled OR if we are in 'all' tab (since grid is hidden there) */}
+        {(showFilters || recipeCategoryFilter === 'all') && !showGrid && recipeCategoryFilter !== 'single' && (
           <div className="p-4 bg-slate-900 border-b border-slate-800 animate-slide-up w-full">
              <div className="mb-4">
               <ChipSelector 
@@ -1057,7 +1061,7 @@ const RecipeListScreen = ({
   );
 };
 
-const InventoryScreen = ({ ingredients, startEdit, requestDelete, ingCategories, setIngCategories, showConfirm, onBatchAdd }) => {
+const InventoryScreen = ({ ingredients, startEdit, requestDelete, ingCategories, setIngCategories, showConfirm, onBatchAdd, availableBases }) => {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [isAddingCat, setIsAddingCat] = useState(false);
   const [newCatName, setNewCatName] = useState('');
@@ -1202,7 +1206,7 @@ const InventoryScreen = ({ ingredients, startEdit, requestDelete, ingCategories,
              >
                全部
              </button>
-             {BASE_SPIRITS.map(spirit => (
+             {availableBases.map(spirit => (
                  <button 
                    key={spirit}
                    onClick={()=>setSubCategoryFilter(spirit)} 
@@ -1488,21 +1492,36 @@ const EditorSheet = ({
   setAvailableTags,
   availableGlasses,
   setAvailableGlasses,
+  availableBases, 
+  setAvailableBases,
   requestDelete,
   ingCategories,
   setIngCategories,
   showAlert 
 }) => {
   const fileInputRef = useRef(null);
+  
+  // Inline Add States
+  const [addingItem, setAddingItem] = useState(null); // 'technique' | 'glass' | 'tag' | 'base'
+  const [newItemValue, setNewItemValue] = useState('');
 
-  // FIX: Guard clause to prevent crash if item is null
   if (!mode || !item) return null;
+
+  const handleAddItem = () => {
+    if (!newItemValue.trim()) return;
+    const val = newItemValue.trim();
+    if (addingItem === 'technique') setAvailableTechniques([...availableTechniques, val]);
+    if (addingItem === 'glass') setAvailableGlasses([...availableGlasses, val]);
+    if (addingItem === 'tag') setAvailableTags([...availableTags, val]);
+    if (addingItem === 'base') setAvailableBases([...availableBases, val]);
+    setAddingItem(null);
+    setNewItemValue('');
+  };
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // 檢查檔案大小 (限制 10MB，但我們會壓縮)
     if (file.size > 10 * 1024 * 1024) {
       if(showAlert) showAlert('錯誤', '圖片太大，請選擇小於 10MB 的照片');
       else alert('圖片太大');
@@ -1513,15 +1532,12 @@ const EditorSheet = ({
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        // 建立 Canvas 進行壓縮
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-        // 加強壓縮：限制最大寬度為 300px，以節省 LocalStorage 空間
         const MAX_WIDTH = 300; 
         const MAX_HEIGHT = 300;
 
-        // 計算縮放比例
         if (width > height) {
           if (width > MAX_WIDTH) {
             height *= MAX_WIDTH / width;
@@ -1539,7 +1555,6 @@ const EditorSheet = ({
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
         
-        // 輸出為 JPEG, 品質調降至 0.5 以避免 QuotaExceededError
         const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
         setItem({ ...item, image: dataUrl });
       };
@@ -1572,7 +1587,7 @@ const EditorSheet = ({
   const stats = mode === 'recipe' ? calculateRecipeStats(item, ingredients) : null;
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end">
+    <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
       <div className="relative w-full md:w-[600px] bg-slate-900 h-full shadow-2xl flex flex-col animate-slide-up border-l border-slate-800">
         
@@ -1586,7 +1601,7 @@ const EditorSheet = ({
         {/* Form Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-safe-offset custom-scrollbar">
            
-           {/* Image Section - File Upload UI */}
+           {/* Image Section */}
            <div className="space-y-2">
               <input 
                 type="file" 
@@ -1650,30 +1665,52 @@ const EditorSheet = ({
               {/* Sub-Type for Alcohol */}
               {mode === 'ingredient' && item.type === 'alcohol' && (
                 <div className="space-y-1">
-                   <label className="text-xs font-bold text-slate-500 uppercase">基酒細項</label>
-                   <select 
-                     value={item.subType} 
-                     onChange={e => setItem({...item, subType: e.target.value})} 
-                     className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-amber-500 appearance-none"
-                   >
-                      <option value="">-- 無 --</option>
-                      {BASE_SPIRITS.map(s => <option key={s} value={s}>{s}</option>)}
-                   </select>
+                   <div className="flex justify-between">
+                     <label className="text-xs font-bold text-slate-500 uppercase">基酒細項</label>
+                     <button onClick={() => { setAddingItem('base'); setNewItemValue(''); }} className="text-[10px] text-amber-500">新增</button>
+                   </div>
+                   {addingItem === 'base' ? (
+                      <div className="flex gap-2 h-[46px] items-center">
+                        <input autoFocus value={newItemValue} onChange={e=>setNewItemValue(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-white" placeholder="輸入新基酒..."/>
+                        <button onClick={handleAddItem} className="bg-amber-600 text-white px-2 py-1 rounded text-xs font-bold shrink-0">V</button>
+                        <button onClick={()=>setAddingItem(null)} className="text-slate-400 p-1"><X size={14}/></button>
+                      </div>
+                   ) : (
+                     <select 
+                       value={item.subType} 
+                       onChange={e => setItem({...item, subType: e.target.value})} 
+                       className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-amber-500 appearance-none"
+                     >
+                        <option value="">-- 無 --</option>
+                        {availableBases.map(s => <option key={s} value={s}>{s}</option>)}
+                     </select>
+                   )}
                 </div>
               )}
 
               {/* Base Spirit for Recipe */}
               {mode === 'recipe' && (
                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-500 uppercase">基酒</label>
-                    <select 
-                       value={item.baseSpirit} 
-                       onChange={e => setItem({...item, baseSpirit: e.target.value})} 
-                       className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-amber-500 appearance-none"
-                    >
-                       <option value="">其他</option>
-                       {BASE_SPIRITS.map(b => <option key={b} value={b}>{b}</option>)}
-                    </select>
+                    <div className="flex justify-between">
+                       <label className="text-xs font-bold text-slate-500 uppercase">基酒</label>
+                       <button onClick={() => { setAddingItem('base'); setNewItemValue(''); }} className="text-[10px] text-amber-500">新增</button>
+                    </div>
+                    {addingItem === 'base' ? (
+                      <div className="flex gap-2 h-[46px] items-center">
+                        <input autoFocus value={newItemValue} onChange={e=>setNewItemValue(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-white" placeholder="輸入新基酒..."/>
+                        <button onClick={handleAddItem} className="bg-amber-600 text-white px-2 py-1 rounded text-xs font-bold shrink-0">V</button>
+                        <button onClick={()=>setAddingItem(null)} className="text-slate-400 p-1"><X size={14}/></button>
+                      </div>
+                    ) : (
+                      <select 
+                         value={item.baseSpirit} 
+                         onChange={e => setItem({...item, baseSpirit: e.target.value})} 
+                         className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-amber-500 appearance-none"
+                      >
+                         <option value="">其他</option>
+                         {availableBases.map(b => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                    )}
                  </div>
               )}
            </div>
@@ -1761,34 +1798,44 @@ const EditorSheet = ({
                     <div className="space-y-1">
                        <div className="flex justify-between">
                          <label className="text-xs font-bold text-slate-500 uppercase">調製法</label>
-                         <button onClick={() => {
-                           const t = prompt('新增調製法:');
-                           if(t) setAvailableTechniques([...availableTechniques, t]);
-                         }} className="text-[10px] text-amber-500">新增</button>
+                         <button onClick={() => { setAddingItem('technique'); setNewItemValue(''); }} className="text-[10px] text-amber-500">新增</button>
                        </div>
-                       <select 
-                         value={item.technique} 
-                         onChange={e => setItem({...item, technique: e.target.value})}
-                         className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-amber-500 appearance-none"
-                       >
-                         {availableTechniques.map(t => <option key={t} value={t}>{t}</option>)}
-                       </select>
+                       {addingItem === 'technique' ? (
+                          <div className="flex gap-2 h-[46px] items-center">
+                             <input autoFocus value={newItemValue} onChange={e=>setNewItemValue(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-white" placeholder="輸入調法..."/>
+                             <button onClick={handleAddItem} className="bg-amber-600 text-white px-2 py-1 rounded text-xs font-bold shrink-0">V</button>
+                             <button onClick={()=>setAddingItem(null)} className="text-slate-400 p-1"><X size={14}/></button>
+                          </div>
+                       ) : (
+                         <select 
+                           value={item.technique} 
+                           onChange={e => setItem({...item, technique: e.target.value})}
+                           className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-amber-500 appearance-none"
+                         >
+                           {availableTechniques.map(t => <option key={t} value={t}>{t}</option>)}
+                         </select>
+                       )}
                     </div>
                     <div className="space-y-1">
                        <div className="flex justify-between">
                          <label className="text-xs font-bold text-slate-500 uppercase">杯具</label>
-                         <button onClick={() => {
-                           const g = prompt('新增杯具:');
-                           if(g) setAvailableGlasses([...availableGlasses, g]);
-                         }} className="text-[10px] text-amber-500">新增</button>
+                         <button onClick={() => { setAddingItem('glass'); setNewItemValue(''); }} className="text-[10px] text-amber-500">新增</button>
                        </div>
-                       <select 
-                         value={item.glass} 
-                         onChange={e => setItem({...item, glass: e.target.value})}
-                         className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-amber-500 appearance-none"
-                       >
-                         {availableGlasses.map(g => <option key={g} value={g}>{g}</option>)}
-                       </select>
+                       {addingItem === 'glass' ? (
+                          <div className="flex gap-2 h-[46px] items-center">
+                             <input autoFocus value={newItemValue} onChange={e=>setNewItemValue(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-white" placeholder="輸入杯具..."/>
+                             <button onClick={handleAddItem} className="bg-amber-600 text-white px-2 py-1 rounded text-xs font-bold shrink-0">V</button>
+                             <button onClick={()=>setAddingItem(null)} className="text-slate-400 p-1"><X size={14}/></button>
+                          </div>
+                       ) : (
+                         <select 
+                           value={item.glass} 
+                           onChange={e => setItem({...item, glass: e.target.value})}
+                           className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-amber-500 appearance-none"
+                         >
+                           {availableGlasses.map(g => <option key={g} value={g}>{g}</option>)}
+                         </select>
+                       )}
                     </div>
                     <div className="space-y-1 col-span-2">
                        <label className="text-xs font-bold text-slate-500 uppercase">裝飾 (Garnish)</label>
@@ -1800,11 +1847,15 @@ const EditorSheet = ({
                  <div className="space-y-2">
                     <div className="flex justify-between items-center">
                        <label className="text-xs font-bold text-slate-500 uppercase">風味標籤</label>
-                       <button onClick={() => {
-                          const t = prompt('新增標籤:');
-                          if(t) setAvailableTags([...availableTags, t]);
-                       }} className="text-xs text-amber-500">新增</button>
+                       <button onClick={() => { setAddingItem('tag'); setNewItemValue(''); }} className="text-xs text-amber-500">新增</button>
                     </div>
+                    {addingItem === 'tag' && (
+                       <div className="flex gap-2 items-center mb-2 animate-slide-up">
+                          <input autoFocus value={newItemValue} onChange={e=>setNewItemValue(e.target.value)} className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-white" placeholder="輸入新標籤..."/>
+                          <button onClick={handleAddItem} className="bg-amber-600 text-white px-2 py-1 rounded text-xs font-bold">新增</button>
+                          <button onClick={()=>setAddingItem(null)} className="text-slate-400 p-1"><X size={14}/></button>
+                       </div>
+                    )}
                     <div className="flex flex-wrap gap-2">
                        {availableTags.map(tag => (
                           <button
@@ -1880,7 +1931,6 @@ const ViewerOverlay = ({ item, onClose, ingredients, startEdit, requestDelete })
              )}
              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent"></div>
              
-             {/* FIX: Corrected positioning classes for the back button */}
              <button 
                onClick={onClose} 
                className="absolute top-4 left-4 mt-safe p-2 bg-black/30 backdrop-blur rounded-full text-white hover:bg-white/20 transition z-50 shadow-lg"
@@ -1981,7 +2031,11 @@ const ViewerOverlay = ({ item, onClose, ingredients, startEdit, requestDelete })
 
 function MainAppContent() {
   const [activeTab, setActiveTab] = useState(() => {
-    try { return localStorage.getItem('bar_active_tab_v3') || 'recipes'; } catch (e) { return 'recipes'; }
+    try { 
+      const t = localStorage.getItem('bar_active_tab_v3');
+      const valid = ['recipes', 'featured', 'ingredients', 'quick', 'tools'];
+      return valid.includes(t) ? t : 'recipes';
+    } catch (e) { return 'recipes'; }
   });
   
   const [ingredients, setIngredients] = useState([]);
@@ -1999,10 +2053,12 @@ function MainAppContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [recipeCategoryFilter, setRecipeCategoryFilter] = useState('all');
   
-  // Global Lists
+  // Global Lists - Dynamic
   const [availableTags, setAvailableTags] = useState(['酸甜 Sour/Sweet', '草本 Herbal', '果香 Fruity', '煙燻 Smoky', '辛辣 Spicy', '苦味 Bitter']);
   const [availableTechniques, setAvailableTechniques] = useState(['Shake', 'Stir', 'Build', 'Roll', 'Blend']);
   const [availableGlasses, setAvailableGlasses] = useState(['Martini', 'Coupe', 'Rock', 'Highball', 'Collins', 'Shot']);
+  const [availableBases, setAvailableBases] = useState(DEFAULT_BASE_SPIRITS);
+  
   const [ingCategories, setIngCategories] = useState([
     { id: 'alcohol', label: '基酒 Alcohol' },
     { id: 'soft', label: '軟性飲料 Soft' },
@@ -2027,44 +2083,60 @@ function MainAppContent() {
     load('bar_sections_v3', setSections);
     load('bar_tags_v3', setAvailableTags);
     load('bar_ing_cats_v3', setIngCategories);
+    load('bar_techniques_v3', setAvailableTechniques);
+    load('bar_glasses_v3', setAvailableGlasses);
+    load('bar_bases_v1', setAvailableBases); // NEW: Load custom bases
   }, []);
 
-  // Save Data with Safety Check (防止白屏當機)
-  const safeSave = (key, data) => {
+  // Safe Persist Function (returns boolean success)
+  const persistData = (key, data) => {
     try {
       localStorage.setItem(key, JSON.stringify(data));
+      return true;
     } catch (e) {
       console.error("Storage failed:", e);
       if (e.name === 'QuotaExceededError' || e.code === 22) {
-        alert("儲存空間已滿！無法儲存這張照片或資料。請刪除一些舊的酒譜或照片後再試。");
+        return false;
       }
+      return false; 
     }
   };
 
-  useEffect(() => safeSave('bar_ingredients_v3', ingredients), [ingredients]);
-  useEffect(() => safeSave('bar_recipes_v3', recipes), [recipes]);
-  useEffect(() => safeSave('bar_sections_v3', sections), [sections]);
-  useEffect(() => safeSave('bar_tags_v3', availableTags), [availableTags]);
-  useEffect(() => safeSave('bar_ing_cats_v3', ingCategories), [ingCategories]);
-  useEffect(() => safeSave('bar_active_tab_v3', activeTab), [activeTab]);
+  // Only auto-save non-critical (small) lists via useEffect
+  useEffect(() => { persistData('bar_sections_v3', sections); }, [sections]);
+  useEffect(() => { persistData('bar_tags_v3', availableTags); }, [availableTags]);
+  useEffect(() => { persistData('bar_ing_cats_v3', ingCategories); }, [ingCategories]);
+  useEffect(() => { persistData('bar_techniques_v3', availableTechniques); }, [availableTechniques]);
+  useEffect(() => { persistData('bar_glasses_v3', availableGlasses); }, [availableGlasses]);
+  useEffect(() => { persistData('bar_bases_v1', availableBases); }, [availableBases]);
+  useEffect(() => { persistData('bar_active_tab_v3', activeTab); }, [activeTab]);
 
   const closeDialog = () => setDialog({ ...dialog, isOpen: false });
   const showConfirm = (title, message, onConfirm) => setDialog({ isOpen: true, type: 'confirm', title, message, onConfirm });
   const showAlert = (title, message) => setDialog({ isOpen: true, type: 'alert', title, message, onConfirm: null });
 
   const handleBatchAddIngredients = (newItems) => {
-    setIngredients(prev => [...prev, ...newItems]);
-    showAlert('新增成功', `已成功新增 ${newItems.length} 項材料。\n(預設為 $0/700ml，請記得更新詳細資訊)`);
+    const newList = [...ingredients, ...newItems];
+    if (persistData('bar_ingredients_v3', newList)) {
+      setIngredients(newList);
+      showAlert('新增成功', `已成功新增 ${newItems.length} 項材料。`);
+    } else {
+      showAlert('儲存失敗', '空間不足，無法新增材料。');
+    }
   };
 
   const requestDelete = (id, type) => {
     const title = type === 'recipe' ? '刪除酒譜' : '刪除材料';
     showConfirm(title, '確定要刪除嗎？此動作無法復原。', () => {
        if (type === 'recipe') {
-         setRecipes(recipes.filter(r => r.id !== id));
+         const newList = recipes.filter(r => r.id !== id);
+         setRecipes(newList);
+         persistData('bar_recipes_v3', newList); // Always succeeds (deleting frees space)
          if (viewingItem?.id === id) setViewingItem(null);
        } else {
-         setIngredients(ingredients.filter(i => i.id !== id));
+         const newList = ingredients.filter(i => i.id !== id);
+         setIngredients(newList);
+         persistData('bar_ingredients_v3', newList);
        }
     });
   };
@@ -2080,14 +2152,23 @@ function MainAppContent() {
            setIngredients(data.ingredients || []);
            setRecipes(data.recipes || []);
            setSections(data.sections || []);
+           persistData('bar_ingredients_v3', data.ingredients || []);
+           persistData('bar_recipes_v3', data.recipes || []);
+           persistData('bar_sections_v3', data.sections || []);
            showAlert('還原成功', '資料已完全覆蓋。');
         } else {
-           // Merge Logic
            const newIngs = (data.ingredients || []).filter(ni => !ingredients.some(ei => ei.id === ni.id));
            const newRecs = (data.recipes || []).filter(nr => !recipes.some(er => er.id === nr.id));
-           setIngredients([...ingredients, ...newIngs]);
-           setRecipes([...recipes, ...newRecs]);
-           showAlert('合併成功', `已加入 ${newIngs.length} 項材料與 ${newRecs.length} 款酒譜。`);
+           const mergedIngs = [...ingredients, ...newIngs];
+           const mergedRecs = [...recipes, ...newRecs];
+           
+           if (persistData('bar_ingredients_v3', mergedIngs) && persistData('bar_recipes_v3', mergedRecs)) {
+              setIngredients(mergedIngs);
+              setRecipes(mergedRecs);
+              showAlert('合併成功', `已加入 ${newIngs.length} 項材料與 ${newRecs.length} 款酒譜。`);
+           } else {
+              showAlert('錯誤', '空間不足，無法合併資料。');
+           }
         }
       } catch (err) {
         showAlert('錯誤', '檔案格式不正確');
@@ -2121,20 +2202,30 @@ function MainAppContent() {
   const saveItem = () => {
     if (!editingItem.nameZh) return showAlert('錯誤', '請輸入名稱');
     
+    let newList;
+    let key;
+    
     if (editorMode === 'ingredient') {
-       setIngredients(prev => {
-         const exists = prev.find(i => i.id === editingItem.id);
-         return exists ? prev.map(i => i.id === editingItem.id ? editingItem : i) : [...prev, editingItem];
-       });
+       key = 'bar_ingredients_v3';
+       const exists = ingredients.find(i => i.id === editingItem.id);
+       newList = exists ? ingredients.map(i => i.id === editingItem.id ? editingItem : i) : [...ingredients, editingItem];
     } else {
-       setRecipes(prev => {
-         const exists = prev.find(r => r.id === editingItem.id);
-         return exists ? prev.map(r => r.id === editingItem.id ? editingItem : r) : [...prev, editingItem];
-       });
-       if (viewingItem && viewingItem.id === editingItem.id) setViewingItem(editingItem);
+       key = 'bar_recipes_v3';
+       const exists = recipes.find(r => r.id === editingItem.id);
+       newList = exists ? recipes.map(r => r.id === editingItem.id ? editingItem : r) : [...recipes, editingItem];
     }
-    setEditorMode(null);
-    setEditingItem(null);
+
+    if (persistData(key, newList)) {
+       if (editorMode === 'ingredient') setIngredients(newList);
+       else {
+         setRecipes(newList);
+         if (viewingItem && viewingItem.id === editingItem.id) setViewingItem(editingItem);
+       }
+       setEditorMode(null);
+       setEditingItem(null);
+    } else {
+       showAlert('儲存失敗', '儲存空間已滿！請刪除一些舊的照片或酒譜，或者嘗試不使用照片。');
+    }
   };
 
   return (
@@ -2175,7 +2266,7 @@ function MainAppContent() {
             startEdit={startEdit} 
             setViewingItem={setViewingItem} 
             availableTags={availableTags} 
-            availableBases={BASE_SPIRITS}
+            availableBases={availableBases}
           />
         )}
         
@@ -2200,13 +2291,32 @@ function MainAppContent() {
             setIngCategories={setIngCategories} 
             showConfirm={showConfirm} 
             onBatchAdd={handleBatchAddIngredients} 
+            availableBases={availableBases}
           />
         )}
         {activeTab === 'quick' && <QuickCalcScreen ingredients={ingredients} />}
         {activeTab === 'tools' && (
            <div className="h-full flex flex-col overflow-y-auto p-6 text-center space-y-6 pt-20 w-full custom-scrollbar pb-24">
              <div className="w-20 h-20 bg-slate-800 rounded-full mx-auto flex items-center justify-center border border-slate-700 shadow-lg shadow-amber-900/10"><Wine size={32} className="text-amber-500"/></div>
-             <h2 className="text-xl font-serif text-slate-200">Bar Manager v8.1</h2>
+             <h2 className="text-xl font-serif text-slate-200">Bar Manager v8.3</h2>
+             
+             {/* Storage Indicator */}
+             <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 w-full">
+                <div className="flex justify-between items-center text-xs text-slate-400 mb-2">
+                   <span>儲存空間使用量 (大約)</span>
+                   <span>{(JSON.stringify(localStorage).length / 1024 / 1024).toFixed(2)} MB / 5.0 MB</span>
+                </div>
+                <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                   <div 
+                     className="h-full bg-amber-600 rounded-full transition-all duration-500" 
+                     style={{ width: `${Math.min(100, (JSON.stringify(localStorage).length / (5 * 1024 * 1024)) * 100)}%` }}
+                   />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-2 text-left">
+                   注意：這是一個網頁 APP，圖片是儲存在瀏覽器的暫存空間中，而非手機相簿。若清除瀏覽器資料，照片可能會遺失。建議定期使用「匯出數據」備份。
+                </p>
+             </div>
+
              <div className="space-y-3">
                <button onClick={() => { const data = JSON.stringify({ingredients, recipes, sections}); const blob = new Blob([data], {type: 'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `bar_backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); }} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl flex items-center gap-4 hover:bg-slate-700 transition"><Download className="text-blue-400"/><div className="text-left"><div className="text-slate-200 font-bold">匯出數據</div><div className="text-xs text-slate-500">備份到手機</div></div></button>
                
@@ -2229,7 +2339,7 @@ function MainAppContent() {
       </main>
 
       {dialog.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-xs rounded-2xl shadow-2xl p-6 animate-scale-in">
             <div className="flex flex-col items-center text-center space-y-4">
                {dialog.type === 'alert' ? <div className="w-12 h-12 rounded-full bg-rose-900/30 flex items-center justify-center text-rose-500"><AlertCircle size={32}/></div> : <div className="w-12 h-12 rounded-full bg-amber-900/30 flex items-center justify-center text-amber-500"><AlertTriangle size={32}/></div>}
@@ -2261,7 +2371,26 @@ function MainAppContent() {
         </div>
       </nav>
 
-      <EditorSheet mode={editorMode} item={editingItem} setItem={setEditingItem} onSave={saveItem} onClose={() => setEditorMode(null)} ingredients={ingredients} availableTechniques={availableTechniques} setAvailableTechniques={setAvailableTechniques} availableTags={availableTags} setAvailableTags={setAvailableTags} availableGlasses={availableGlasses} setAvailableGlasses={setAvailableGlasses} requestDelete={requestDelete} ingCategories={ingCategories} setIngCategories={setIngCategories} showAlert={showAlert} />
+      <EditorSheet 
+        mode={editorMode} 
+        item={editingItem} 
+        setItem={setEditingItem} 
+        onSave={saveItem} 
+        onClose={() => setEditorMode(null)} 
+        ingredients={ingredients} 
+        availableTechniques={availableTechniques} 
+        setAvailableTechniques={setAvailableTechniques} 
+        availableTags={availableTags} 
+        setAvailableTags={setAvailableTags} 
+        availableGlasses={availableGlasses} 
+        setAvailableGlasses={setAvailableGlasses} 
+        availableBases={availableBases}
+        setAvailableBases={setAvailableBases}
+        requestDelete={requestDelete} 
+        ingCategories={ingCategories} 
+        setIngCategories={setIngCategories} 
+        showAlert={showAlert} 
+      />
       <ViewerOverlay item={viewingItem} onClose={() => setViewingItem(null)} ingredients={ingredients} startEdit={startEdit} requestDelete={requestDelete} />
     </div>
   );
