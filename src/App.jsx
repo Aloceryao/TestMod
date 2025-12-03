@@ -38,6 +38,63 @@ import {
 } from 'lucide-react';
 
 // ==========================================
+// 0. Error Boundary (防崩潰機制)
+// ==========================================
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("App Crash:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 flex flex-col items-center justify-center bg-slate-950 text-white p-6 text-center z-50">
+          <div className="w-20 h-20 bg-rose-900/30 rounded-full flex items-center justify-center mb-6">
+            <AlertTriangle size={40} className="text-rose-500" />
+          </div>
+          <h1 className="text-2xl font-bold mb-2">應用程式發生錯誤</h1>
+          <p className="text-slate-400 mb-8 text-sm leading-relaxed max-w-xs">
+            可能是圖片檔案過大導致儲存空間不足。<br/>別擔心，您的部分資料可能還在。
+          </p>
+          <div className="flex flex-col gap-3 w-full max-w-xs">
+             <button onClick={() => window.location.reload()} className="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-xl font-bold text-white shadow-lg">
+               重新整理頁面
+             </button>
+             <button 
+               onClick={() => { 
+                 if(confirm('警告：這將會清除所有資料並重置 APP。確定要繼續嗎？')) {
+                   localStorage.clear(); 
+                   window.location.reload(); 
+                 }
+               }} 
+               className="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-slate-400"
+             >
+               重置所有資料 (修復)
+             </button>
+          </div>
+          <div className="mt-8 p-4 bg-black/50 rounded-xl border border-slate-800 w-full max-w-xs text-left overflow-hidden">
+            <p className="text-[10px] font-mono text-rose-400 break-all">
+              {this.state.error?.toString()}
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children; 
+  }
+}
+
+// ==========================================
 // 1. Constants & Helper Functions
 // ==========================================
 
@@ -335,7 +392,6 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
   const [newSectionTitle, setNewSectionTitle] = useState('');
   const [newSubgroupTitle, setNewSubgroupTitle] = useState('');
   
-  // Recipe Picker State
   const [showPicker, setShowPicker] = useState(false);
   const [pickingForSubgroupId, setPickingForSubgroupId] = useState(null);
   const [pickerSearch, setPickerSearch] = useState('');
@@ -790,10 +846,14 @@ const RecipeListScreen = ({
   const [isGridEditing, setIsGridEditing] = useState(false);
   const [showCatModal, setShowCatModal] = useState(false);
   
-  // Load custom grid categories (Object Structure V2)
+  // Load custom grid categories (Object Structure V3)
   const [gridCategories, setGridCategories] = useState(() => {
-    const saved = localStorage.getItem('bar_grid_cats_v3'); // Updated Key for V3
-    if (saved) return JSON.parse(saved);
+    try {
+      const saved = localStorage.getItem('bar_grid_cats_v3');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error("Error loading grid cats:", e);
+    }
 
     // Default Initialization V3 Structure
     return [
@@ -825,7 +885,6 @@ const RecipeListScreen = ({
   const handleBlockSelect = (cat) => {
     setActiveBlock(cat);
     // Logic: If block name matches a base spirit (fuzzy), use base filter.
-    // Otherwise rely on activeBlock object in SingleItemScreen or Tags
     const baseMatch = availableBases.find(b => b.includes(cat.nameZh) || b.includes(cat.nameEn));
     
     if (baseMatch) {
@@ -1458,9 +1517,9 @@ const EditorSheet = ({
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-        // 加強壓縮：限制最大寬度為 600px，以節省 LocalStorage 空間
-        const MAX_WIDTH = 600; 
-        const MAX_HEIGHT = 600;
+        // 加強壓縮：限制最大寬度為 300px，以節省 LocalStorage 空間
+        const MAX_WIDTH = 300; 
+        const MAX_HEIGHT = 300;
 
         // 計算縮放比例
         if (width > height) {
@@ -1921,7 +1980,9 @@ const ViewerOverlay = ({ item, onClose, ingredients, startEdit, requestDelete })
 // --- 6. Main App Container ---
 
 function MainAppContent() {
-  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('bar_active_tab_v3') || 'recipes');
+  const [activeTab, setActiveTab] = useState(() => {
+    try { return localStorage.getItem('bar_active_tab_v3') || 'recipes'; } catch (e) { return 'recipes'; }
+  });
   
   const [ingredients, setIngredients] = useState([]);
   const [recipes, setRecipes] = useState([]);
@@ -1974,7 +2035,6 @@ function MainAppContent() {
       localStorage.setItem(key, JSON.stringify(data));
     } catch (e) {
       console.error("Storage failed:", e);
-      // 如果是因為空間滿了，提示使用者
       if (e.name === 'QuotaExceededError' || e.code === 22) {
         alert("儲存空間已滿！無法儲存這張照片或資料。請刪除一些舊的酒譜或照片後再試。");
       }
@@ -2207,5 +2267,10 @@ function MainAppContent() {
   );
 }
 
-const App = MainAppContent;
+const App = () => (
+  <ErrorBoundary>
+    <MainAppContent />
+  </ErrorBoundary>
+);
+
 export default App;
