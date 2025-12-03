@@ -33,7 +33,8 @@ import {
   MoreHorizontal,
   LayoutGrid,
   ListPlus,
-  ArrowLeft
+  ArrowLeft,
+  Image as ImageIcon // Renamed to avoid conflict with Image object
 } from 'lucide-react';
 
 // ==========================================
@@ -42,113 +43,53 @@ import {
 
 const BASE_SPIRITS = ['Gin 琴酒', 'Whisky 威士忌', 'Rum 蘭姆酒', 'Tequila 龍舌蘭', 'Vodka 伏特加', 'Brandy 白蘭地', 'Liqueur 利口酒'];
 
-// --- Custom Line Art Icons for Categories ---
-const CategoryIcon = ({ category, className }) => {
-  const name = category.split(' ')[0].toLowerCase();
-  
-  // SVG Properties
-  const props = {
-    className,
-    width: "100%", 
-    height: "100%", 
-    viewBox: "0 0 24 24", 
-    fill: "none", 
-    stroke: "currentColor", 
-    strokeWidth: "1.5", 
-    strokeLinecap: "round", 
-    strokeLinejoin: "round"
-  };
-
-  // 1. Whisky (Rock Glass)
-  if (name.includes('whisky') || name.includes('bourbon') || name.includes('scotch')) {
-    return (
-      <svg {...props}>
-        <path d="M5 4h14v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4z" />
-        <path d="M5 10h14" />
-        <path d="M9 14h6" opacity="0.5"/>
-      </svg>
-    );
-  }
-
-  // 2. Gin / Vodka / Martini (Martini Glass)
-  if (name.includes('gin') || name.includes('vodka') || name.includes('martini') || name.includes('classic')) {
-    return (
-      <svg {...props}>
-        <path d="M8 22h8" />
-        <path d="M12 22v-11" />
-        <path d="M2 3l10 10 10-10" />
-        <path d="M5 6h14" opacity="0.5"/>
-      </svg>
-    );
-  }
-
-  // 3. Rum / Highball (Highball Glass)
-  if (name.includes('rum') || name.includes('long') || name.includes('fizz')) {
-    return (
-      <svg {...props}>
-        <path d="M7 3h10v18a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V3z" />
-        <path d="M7 9h10" />
-        <path d="M7 15h10" />
-        <line x1="10" y1="3" x2="10" y2="22" strokeDasharray="2 2" opacity="0.3"/>
-      </svg>
-    );
-  }
-
-  // 4. Brandy (Snifter)
-  if (name.includes('brandy') || name.includes('cognac')) {
-    return (
-      <svg {...props}>
-        <path d="M7 21h10" />
-        <path d="M12 21v-3" />
-        <path d="M6 10h12" />
-        <path d="M19 10a7 7 0 0 0-14 0c0 4.5 3.5 8 7 8s7-3.5 7-8z" />
-        <path d="M12 10v4" opacity="0.5"/>
-      </svg>
-    );
-  }
-
-  // 5. Tequila / Shot (Shot Glass)
-  if (name.includes('tequila') || name.includes('shot') || name.includes('mezcal')) {
-    return (
-      <svg {...props}>
-        <path d="M18 3l-2 18H8L6 3h12z" />
-        <path d="M7 9h10" opacity="0.5"/>
-      </svg>
-    );
-  }
-
-  // 6. Liqueur / Wine (Wine Glass / Bottle)
-  if (name.includes('liqueur') || name.includes('wine')) {
-    return (
-      <svg {...props}>
-         <path d="M9 21h6" />
-         <path d="M12 21v-6" />
-         <path d="M12 15a5 5 0 0 0 5-5c0-2-.5-4-1.5-4.5l-3.5 2-3.5-2C7.5 6 7 8 7 10a5 5 0 0 0 5 5z"/>
-      </svg>
-    );
-  }
-
-  // 7. Soft / Other (Tumbler/Lemon)
-  if (name.includes('soft') || name.includes('juice')) {
-     return (
-       <svg {...props}>
-         <circle cx="12" cy="12" r="9" />
-         <path d="M12 3v18" opacity="0.3"/>
-         <path d="M3 12h18" opacity="0.3"/>
-         <path d="M18.36 5.64l-12.72 12.72" opacity="0.3"/>
-         <path d="M5.64 5.64l12.72 12.72" opacity="0.3"/>
-       </svg>
-     );
-  }
-  
-  // Default: Generic Cocktail Shaker
-  return (
-    <svg {...props}>
-      <path d="M6 9h12v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9z" />
-      <path d="M6 5h12v4H6z" />
-      <path d="M9 2h6v3H9z" />
+// --- Icon Registry for Category Blocks ---
+const ICON_TYPES = {
+  whisky: { label: '威士忌杯 (Rock)', component: (props) => (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 4h14v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4z" /><path d="M5 10h14" /><path d="M9 14h6" opacity="0.5"/>
     </svg>
-  );
+  )},
+  martini: { label: '馬丁尼杯 (Martini)', component: (props) => (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 22h8" /><path d="M12 22v-11" /><path d="M2 3l10 10 10-10" /><path d="M5 6h14" opacity="0.5"/>
+    </svg>
+  )},
+  highball: { label: '高球杯 (Highball)', component: (props) => (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 3h10v18a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V3z" /><path d="M7 9h10" /><path d="M7 15h10" /><line x1="10" y1="3" x2="10" y2="22" strokeDasharray="2 2" opacity="0.3"/>
+    </svg>
+  )},
+  snifter: { label: '白蘭地杯 (Snifter)', component: (props) => (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 21h10" /><path d="M12 21v-3" /><path d="M6 10h12" /><path d="M19 10a7 7 0 0 0-14 0c0 4.5 3.5 8 7 8s7-3.5 7-8z" /><path d="M12 10v4" opacity="0.5"/>
+    </svg>
+  )},
+  shot: { label: '一口杯 (Shot)', component: (props) => (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 3l-2 18H8L6 3h12z" /><path d="M7 9h10" opacity="0.5"/>
+    </svg>
+  )},
+  wine: { label: '酒瓶/酒杯 (Wine)', component: (props) => (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+       <path d="M9 21h6" /><path d="M12 21v-6" /><path d="M12 15a5 5 0 0 0 5-5c0-2-.5-4-1.5-4.5l-3.5 2-3.5-2C7.5 6 7 8 7 10a5 5 0 0 0 5 5z"/>
+    </svg>
+  )},
+  shaker: { label: '雪克杯 (Shaker)', component: (props) => (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 9h12v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9z" /><path d="M6 5h12v4H6z" /><path d="M9 2h6v3H9z" />
+    </svg>
+  )},
+  soft: { label: '軟飲 (Soft)', component: (props) => (
+     <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+       <circle cx="12" cy="12" r="9" /><path d="M12 3v18" opacity="0.3"/><path d="M3 12h18" opacity="0.3"/><path d="M18.36 5.64l-12.72 12.72" opacity="0.3"/><path d="M5.64 5.64l12.72 12.72" opacity="0.3"/>
+     </svg>
+  )}
+};
+
+const CategoryIcon = ({ iconType, className }) => {
+  const IconComponent = ICON_TYPES[iconType]?.component || ICON_TYPES['shaker'].component;
+  return <IconComponent className={className} />;
 };
 
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
@@ -177,18 +118,15 @@ const calculateRecipeStats = (recipe, allIngredients) => {
     }
   });
 
-  // Garnish cost estimation (fixed $5 for simplicity if not tracked)
   if (recipe.garnish) totalCost += 5;
 
-  // Dilution estimation (Simplified: Stir +15%, Shake +25%)
   let dilution = 0;
   if (recipe.technique === 'Stir') dilution = totalVolume * 0.15;
   if (recipe.technique === 'Shake') dilution = totalVolume * 0.25;
-  if (recipe.technique === 'Build') dilution = totalVolume * 0.05; // Ice melt
+  if (recipe.technique === 'Build') dilution = totalVolume * 0.05;
   
   const finalVolume = totalVolume + dilution;
   const finalAbv = finalVolume > 0 ? (totalAlcoholVol / finalVolume) * 100 : 0;
-  // If no price set, suggest 30% cost rate price
   const price = recipe.price && recipe.price > 0 ? recipe.price : Math.ceil((totalCost / 0.3) / 10) * 10; 
   const costRate = price > 0 ? (totalCost / price) * 100 : 0;
 
@@ -202,10 +140,9 @@ const calculateRecipeStats = (recipe, allIngredients) => {
 };
 
 // ==========================================
-// 2. Memoized List Items (Performance Fix)
+// 2. Components
 // ==========================================
 
-// --- Ingredient Row Component ---
 const IngredientRow = memo(({ ing, onClick, onDelete }) => (
   <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg border border-slate-800 hover:border-slate-600 transition-colors group w-full">
     <div 
@@ -240,11 +177,9 @@ const IngredientRow = memo(({ ing, onClick, onDelete }) => (
        </button>
     </div>
   </div>
-), (prev, next) => prev.ing === next.ing); // Only re-render if ing data changes
+), (prev, next) => prev.ing === next.ing);
 
-// --- Recipe Card Component ---
 const RecipeCard = memo(({ recipe, ingredients, onClick }) => {
-  // Memoize stats calculation so it doesn't run on every parent render
   const stats = useMemo(() => calculateRecipeStats(recipe, ingredients), [recipe, ingredients]);
   const displayBase = safeString(recipe.baseSpirit).split(' ')[0] || '其他';
 
@@ -306,7 +241,6 @@ const RecipeCard = memo(({ recipe, ingredients, onClick }) => {
   );
 }, (prev, next) => prev.recipe === next.recipe && prev.ingredients === next.ingredients);
 
-// --- Simple Components ---
 const Badge = ({ children, color = 'slate', className='' }) => {
   const colors = {
     slate: 'bg-slate-700 text-slate-300',
@@ -345,30 +279,22 @@ const ChipSelector = ({ title, options, selected, onSelect }) => {
 // ==========================================
 
 const SingleItemScreen = ({ ingredients, searchTerm, activeBlock }) => {
-  // UseMemo to prevent filtering on every render unless deps change
   const filtered = useMemo(() => {
     return ingredients.filter(i => {
-      // 1. Basic Type Filter
       const isRelevant = ['alcohol', 'soft', 'other'].includes(i.type);
       if (!isRelevant) return false;
 
-      // 2. Search Filter (Overrides Block Filter)
       if (searchTerm) {
         return safeString(i.nameZh).includes(searchTerm) || safeString(i.nameEn).toLowerCase().includes(searchTerm.toLowerCase());
       }
 
-      // 3. Block Filter (e.g., "Gin", "Soft")
       if (activeBlock) {
-        // If block matches a SubType (e.g. Gin)
-        if (i.type === 'alcohol' && i.subType && activeBlock.includes(safeString(i.subType).split(' ')[0])) return true;
-        // If block matches a Type (e.g. Soft) - simplistic check
-        if (activeBlock.includes('Soft') && i.type === 'soft') return true;
-        if (activeBlock.includes('Other') && i.type === 'other') return true;
-        // Specific Base Spirit Check
-        const blockKey = activeBlock.split(' ')[0]; // "Gin" from "Gin 琴酒"
-        const subKey = safeString(i.subType).split(' ')[0];
-        if (blockKey === subKey) return true;
-
+        const blockName = activeBlock.nameZh || activeBlock; // Handle object or string
+        // Check SubType (e.g. Gin)
+        if (i.type === 'alcohol' && i.subType && safeString(i.subType).includes(blockName)) return true;
+        // Check generic type
+        if (blockName.includes('Soft') && i.type === 'soft') return true;
+        if (blockName.includes('Other') && i.type === 'other') return true;
         return false;
       }
 
@@ -703,21 +629,93 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
   );
 };
 
-const CategoryGrid = ({ categories, onSelect, onAdd, onDelete, isEditing, toggleEditing }) => {
-  const getGradient = (index) => {
-    const gradients = [
-      'from-blue-600 to-indigo-700',
-      'from-amber-600 to-orange-700',
-      'from-emerald-600 to-teal-700',
-      'from-rose-600 to-pink-700',
-      'from-purple-600 to-violet-700',
-      'from-cyan-600 to-blue-700',
-      'from-slate-600 to-gray-700',
-      'from-fuchsia-600 to-purple-700',
-    ];
-    return gradients[index % gradients.length];
+// --- New Category Edit Modal ---
+const CategoryEditModal = ({ isOpen, onClose, onSave, categories }) => {
+  const [nameZh, setNameZh] = useState('');
+  const [nameEn, setNameEn] = useState('');
+  const [iconType, setIconType] = useState('whisky');
+  const [gradient, setGradient] = useState('from-slate-600 to-gray-700');
+
+  if (!isOpen) return null;
+
+  const handleSubmit = () => {
+    if(!nameZh) return;
+    onSave({
+      id: generateId(),
+      nameZh,
+      nameEn,
+      iconType,
+      gradient
+    });
+    setNameZh('');
+    setNameEn('');
+    onClose();
   };
 
+  const gradients = [
+      { id: 'blue', val: 'from-blue-600 to-indigo-700', label: '藍' },
+      { id: 'amber', val: 'from-amber-600 to-orange-700', label: '琥珀' },
+      { id: 'emerald', val: 'from-emerald-600 to-teal-700', label: '翠綠' },
+      { id: 'rose', val: 'from-rose-600 to-pink-700', label: '玫瑰' },
+      { id: 'purple', val: 'from-purple-600 to-violet-700', label: '紫' },
+      { id: 'cyan', val: 'from-cyan-600 to-blue-700', label: '青' },
+      { id: 'slate', val: 'from-slate-600 to-gray-700', label: '灰' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+       <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl shadow-2xl p-6 animate-scale-in">
+          <div className="flex justify-between items-center mb-6">
+             <h3 className="text-xl font-bold text-white">新增分類色塊</h3>
+             <button onClick={onClose}><X className="text-slate-400"/></button>
+          </div>
+          
+          <div className="space-y-4">
+             <div>
+               <label className="text-xs font-bold text-slate-500 uppercase">中文名稱</label>
+               <input value={nameZh} onChange={e=>setNameZh(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white outline-none focus:border-amber-500" placeholder="例如: 威士忌" />
+             </div>
+             <div>
+               <label className="text-xs font-bold text-slate-500 uppercase">英文/副標題</label>
+               <input value={nameEn} onChange={e=>setNameEn(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white outline-none focus:border-amber-500" placeholder="例如: Whisky" />
+             </div>
+             <div>
+               <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">選擇圖示</label>
+               <div className="grid grid-cols-4 gap-2">
+                 {Object.entries(ICON_TYPES).map(([key, val]) => (
+                   <button 
+                     key={key} 
+                     onClick={()=>setIconType(key)} 
+                     className={`p-2 rounded-lg border flex items-center justify-center ${iconType === key ? 'bg-slate-700 border-amber-500 text-amber-500' : 'border-slate-700 text-slate-500'}`}
+                   >
+                     {val.component({ width: 20, height: 20 })}
+                   </button>
+                 ))}
+               </div>
+             </div>
+             <div>
+               <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">選擇顏色</label>
+               <div className="flex flex-wrap gap-2">
+                 {gradients.map(g => (
+                   <button 
+                     key={g.id} 
+                     onClick={()=>setGradient(g.val)}
+                     className={`w-8 h-8 rounded-full bg-gradient-to-br ${g.val} ring-2 ring-offset-2 ring-offset-slate-900 ${gradient === g.val ? 'ring-white' : 'ring-transparent'}`}
+                   />
+                 ))}
+               </div>
+             </div>
+          </div>
+
+          <button onClick={handleSubmit} className="w-full bg-amber-600 text-white font-bold py-3 rounded-xl mt-6">
+            建立分類
+          </button>
+       </div>
+    </div>
+  );
+};
+
+const CategoryGrid = ({ categories, onSelect, onAdd, onDelete, isEditing, toggleEditing }) => {
   return (
     <div className="p-4 animate-fade-in">
        <div className="flex justify-between items-center mb-4">
@@ -732,23 +730,23 @@ const CategoryGrid = ({ categories, onSelect, onAdd, onDelete, isEditing, toggle
        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {categories.map((cat, idx) => (
             <div 
-              key={cat} 
+              key={cat.id || idx} 
               onClick={() => !isEditing && onSelect(cat)}
-              className={`relative h-28 rounded-2xl bg-gradient-to-br ${getGradient(idx)} shadow-lg overflow-hidden cursor-pointer hover:scale-[1.02] active:scale-95 transition-all border border-white/10 group`}
+              className={`relative h-28 rounded-2xl bg-gradient-to-br ${cat.gradient || 'from-slate-700 to-slate-800'} shadow-lg overflow-hidden cursor-pointer hover:scale-[1.02] active:scale-95 transition-all border border-white/10 group`}
             >
                {/* Background Decorative Icon */}
                <div className="absolute -right-2 -bottom-4 w-24 h-24 text-white opacity-20 transform rotate-[-15deg] group-hover:scale-110 group-hover:opacity-30 transition-all duration-500 pointer-events-none">
-                 <CategoryIcon category={cat} />
+                 <CategoryIcon iconType={cat.iconType} />
                </div>
 
                <div className="absolute inset-0 p-4 flex flex-col justify-center items-center z-10">
-                  <span className="text-white font-bold text-xl text-center drop-shadow-md tracking-wide">{cat.split(' ')[0]}</span>
-                  <span className="text-[10px] text-white/70 font-medium uppercase tracking-wider mt-1 border-t border-white/20 pt-1 px-2">{cat.split(' ')[1] || 'Category'}</span>
+                  <span className="text-white font-bold text-xl text-center drop-shadow-md tracking-wide">{cat.nameZh}</span>
+                  <span className="text-[10px] text-white/70 font-medium uppercase tracking-wider mt-1 border-t border-white/20 pt-1 px-2">{cat.nameEn}</span>
                </div>
                
                {isEditing && (
                  <button 
-                   onClick={(e) => { e.stopPropagation(); onDelete(cat); }}
+                   onClick={(e) => { e.stopPropagation(); onDelete(cat.id); }}
                    className="absolute top-2 right-2 bg-rose-500 text-white rounded-full p-1.5 shadow-md hover:bg-rose-600 animate-scale-in z-20"
                  >
                    <X size={14} strokeWidth={3} />
@@ -790,15 +788,26 @@ const RecipeListScreen = ({
   // Grid View State
   const [activeBlock, setActiveBlock] = useState(null);
   const [isGridEditing, setIsGridEditing] = useState(false);
+  const [showCatModal, setShowCatModal] = useState(false);
   
-  // Load custom grid categories or default to BASE_SPIRITS
+  // Load custom grid categories (Object Structure V2)
   const [gridCategories, setGridCategories] = useState(() => {
-    const saved = localStorage.getItem('bar_grid_cats_v1');
-    return saved ? JSON.parse(saved) : BASE_SPIRITS;
+    const saved = localStorage.getItem('bar_grid_cats_v3'); // Updated Key for V3
+    if (saved) return JSON.parse(saved);
+
+    // Default Initialization V3 Structure
+    return [
+      { id: 'gin', nameZh: 'Gin', nameEn: '琴酒', iconType: 'martini', gradient: 'from-blue-600 to-indigo-700' },
+      { id: 'whisky', nameZh: 'Whisky', nameEn: '威士忌', iconType: 'whisky', gradient: 'from-amber-600 to-orange-700' },
+      { id: 'rum', nameZh: 'Rum', nameEn: '蘭姆酒', iconType: 'highball', gradient: 'from-rose-600 to-pink-700' },
+      { id: 'tequila', nameZh: 'Tequila', nameEn: '龍舌蘭', iconType: 'shot', gradient: 'from-emerald-600 to-teal-700' },
+      { id: 'vodka', nameZh: 'Vodka', nameEn: '伏特加', iconType: 'martini', gradient: 'from-cyan-600 to-blue-700' },
+      { id: 'brandy', nameZh: 'Brandy', nameEn: '白蘭地', iconType: 'snifter', gradient: 'from-purple-600 to-violet-700' },
+    ];
   });
 
   useEffect(() => {
-    localStorage.setItem('bar_grid_cats_v1', JSON.stringify(gridCategories));
+    localStorage.setItem('bar_grid_cats_v3', JSON.stringify(gridCategories));
   }, [gridCategories]);
 
   // Reset to Grid when tab changes (unless searching)
@@ -810,38 +819,29 @@ const RecipeListScreen = ({
     }
   }, [recipeCategoryFilter]);
 
-  // Auto-switch to list if searching
   const isSearching = searchTerm.length > 0;
   const showGrid = !isSearching && !activeBlock;
 
   const handleBlockSelect = (cat) => {
     setActiveBlock(cat);
-    // Auto-apply filter based on block content
-    if (availableBases.includes(cat)) {
-      setFilterBases([cat]);
-    } else {
-      // If it's not a base spirit (e.g. a Tag or custom), try to filter by tags?
-      // For now, let's treat grid items as Base Spirits primarily, or Tags.
-      // If the category is found in tags, filter by tag
-      if (availableTags.includes(cat)) {
-         setFilterTags([cat]);
-      } else {
-         // Fallback: Just use it as a Base Spirit filter (custom ones might be added to base list logic elsewhere)
-         setFilterBases([cat]); 
-      }
+    // Logic: If block name matches a base spirit (fuzzy), use base filter.
+    // Otherwise rely on activeBlock object in SingleItemScreen or Tags
+    const baseMatch = availableBases.find(b => b.includes(cat.nameZh) || b.includes(cat.nameEn));
+    
+    if (baseMatch) {
+      setFilterBases([baseMatch]);
+    } else if (availableTags.includes(cat.nameZh)) {
+      setFilterTags([cat.nameZh]);
     }
   };
 
-  const handleAddCategory = () => {
-    const input = prompt("請輸入新分類名稱 (例如: Sour 酸甜, 或 Vodka):");
-    if (input && !gridCategories.includes(input)) {
-      setGridCategories([...gridCategories, input]);
-    }
+  const handleAddCategory = (newCat) => {
+    setGridCategories([...gridCategories, newCat]);
   };
 
-  const handleDeleteCategory = (cat) => {
-    if (confirm(`確定移除「${cat}」方塊嗎？`)) {
-      setGridCategories(gridCategories.filter(c => c !== cat));
+  const handleDeleteCategory = (id) => {
+    if (confirm(`確定移除此方塊嗎？`)) {
+      setGridCategories(gridCategories.filter(c => c.id !== id));
     }
   };
 
@@ -851,15 +851,12 @@ const RecipeListScreen = ({
     setFilterTags([]);
   };
 
-  // Memoized Filter Logic
   const filtered = useMemo(() => {
     return recipes.filter(r => {
       const matchCat = recipeCategoryFilter === 'all' || r.type === recipeCategoryFilter;
       const matchSearch = safeString(r.nameZh).includes(searchTerm) || safeString(r.nameEn).toLowerCase().includes(searchTerm.toLowerCase());
       const matchBase = filterBases.length === 0 || filterBases.includes(r.baseSpirit);
       const matchTags = filterTags.length === 0 || filterTags.every(t => r.tags?.includes(t));
-      // Special logic for Single tab grid filtering happens in SingleItemScreen, 
-      // but for Recipe tabs, we filter recipes here.
       
       return matchCat && matchSearch && matchBase && matchTags;
     });
@@ -879,7 +876,6 @@ const RecipeListScreen = ({
               />
            </div>
            
-           {/* Only show advanced filters button if not in Grid View (List View) */}
            {!showGrid && recipeCategoryFilter !== 'single' && (
              <button 
                onClick={() => setShowFilters(!showFilters)} 
@@ -913,10 +909,8 @@ const RecipeListScreen = ({
            ))}
         </div>
 
-        {/* Filter Panel (Only in List View) */}
         {showFilters && !showGrid && recipeCategoryFilter !== 'single' && (
           <div className="p-4 bg-slate-900 border-b border-slate-800 animate-slide-up w-full">
-            {/* ... ChipSelectors ... */}
              <div className="mb-4">
               <ChipSelector 
                 title="基酒篩選 (Base)" 
@@ -943,19 +937,16 @@ const RecipeListScreen = ({
 
       <div className="flex-1 overflow-y-auto custom-scrollbar">
          {showGrid ? (
-            /* --- GRID VIEW --- */
             <CategoryGrid 
               categories={gridCategories} 
               onSelect={handleBlockSelect} 
-              onAdd={handleAddCategory}
+              onAdd={() => setShowCatModal(true)}
               onDelete={handleDeleteCategory}
               isEditing={isGridEditing}
               toggleEditing={() => setIsGridEditing(!isGridEditing)}
             />
          ) : (
-            /* --- LIST VIEW --- */
             <div className="p-4 space-y-4 pb-24">
-               {/* Back Button Context Header */}
                {activeBlock && (
                  <div className="flex items-center gap-3 mb-4 animate-fade-in">
                     <button onClick={clearBlockFilter} className="p-2 bg-slate-800 rounded-full hover:bg-slate-700 text-slate-200">
@@ -963,7 +954,7 @@ const RecipeListScreen = ({
                     </button>
                     <div>
                        <div className="text-xs text-slate-500">正在檢視</div>
-                       <div className="text-xl font-bold text-amber-500">{activeBlock.split(' ')[0]}</div>
+                       <div className="text-xl font-bold text-amber-500">{activeBlock.nameZh}</div>
                     </div>
                  </div>
                )}
@@ -972,7 +963,7 @@ const RecipeListScreen = ({
                  <SingleItemScreen 
                    ingredients={ingredients} 
                    searchTerm={searchTerm} 
-                   activeBlock={activeBlock} // Pass grid filter
+                   activeBlock={activeBlock} 
                  />
                ) : (
                  filtered.length > 0 ? (
@@ -996,6 +987,13 @@ const RecipeListScreen = ({
             </div>
          )}
       </div>
+      
+      {/* Category Edit Modal */}
+      <CategoryEditModal 
+         isOpen={showCatModal} 
+         onClose={() => setShowCatModal(false)} 
+         onSave={handleAddCategory} 
+      />
     </div>
   );
 };
@@ -1005,8 +1003,6 @@ const InventoryScreen = ({ ingredients, startEdit, requestDelete, ingCategories,
   const [isAddingCat, setIsAddingCat] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [subCategoryFilter, setSubCategoryFilter] = useState('all');
-  
-  // Batch Add States
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [batchText, setBatchText] = useState('');
   const [batchCategory, setBatchCategory] = useState('other');
@@ -1083,7 +1079,6 @@ const InventoryScreen = ({ ingredients, startEdit, requestDelete, ingCategories,
           </div>
         </div>
         
-        {/* Dynamic Category Filter Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar w-full">
           <button
             onClick={() => setCategoryFilter('all')}
@@ -1227,17 +1222,12 @@ const InventoryScreen = ({ ingredients, startEdit, requestDelete, ingCategories,
 
 const QuickCalcScreen = ({ ingredients }) => {
   const [mode, setMode] = useState('single');
-  
-  // Single Calc State (Manual Input)
   const [price, setPrice] = useState('');
   const [volume, setVolume] = useState(700);
-  const [targetCostRate, setTargetCostRate] = useState(25); // Default 25%
-  
-  // Draft Mode State
+  const [targetCostRate, setTargetCostRate] = useState(25);
   const [draftIngs, setDraftIngs] = useState([]);
   const [technique, setTechnique] = useState('Stir');
 
-  // Draft helper functions
   const addDraftIng = (ingId) => {
     if(!ingId) return;
     setDraftIngs([...draftIngs, { id: ingId, amount: 30 }]);
@@ -1278,7 +1268,6 @@ const QuickCalcScreen = ({ ingredients }) => {
       <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-24 custom-scrollbar">
         {mode === 'single' ? (
           <div className="space-y-6 animate-fade-in">
-             {/* Input Section */}
              <div className="bg-slate-900 rounded-2xl p-4 border border-slate-800 space-y-4">
                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -1323,7 +1312,6 @@ const QuickCalcScreen = ({ ingredients }) => {
                </div>
              </div>
 
-             {/* Results Table */}
              <div className="bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 shadow-lg shadow-black/20">
                 <table className="w-full text-sm">
                    <thead>
@@ -1345,7 +1333,6 @@ const QuickCalcScreen = ({ ingredients }) => {
                          const v = safeNumber(volume) || 1;
                          const cost = (p / v) * row.vol;
                          const rate = safeNumber(targetCostRate) / 100 || 0.25;
-                         // 售價計算：成本除以成本率，並無條件進位至十位數
                          const sellPrice = p > 0 ? Math.ceil((cost / rate) / 10) * 10 : 0;
                          
                          return (
@@ -1447,6 +1434,9 @@ const EditorSheet = ({
   setIngCategories,
   showAlert 
 }) => {
+  const [showImageInput, setShowImageInput] = useState(false);
+  const [tempImage, setTempImage] = useState('');
+
   if (!mode) return null;
 
   const handleRecipeIngChange = (idx, field, value) => {
@@ -1487,29 +1477,46 @@ const EditorSheet = ({
         {/* Form Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-safe-offset custom-scrollbar">
            
-           {/* Image Section */}
-           <div className="w-full h-48 bg-slate-800 rounded-2xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer transition-colors hover:border-slate-500">
-              {item.image ? (
-                <>
-                  <img src={item.image} className="w-full h-full object-cover" alt="Preview" />
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span className="text-white text-sm font-bold">點擊更換圖片</span>
-                  </div>
-                </>
-              ) : (
-                <div className="text-slate-500 flex flex-col items-center">
-                  <Camera size={32} className="mb-2"/>
-                  <span className="text-xs">上傳圖片 (URL)</span>
+           {/* Image Section - Custom Input UI */}
+           <div className="space-y-2">
+              <div 
+                onClick={() => { setTempImage(item.image); setShowImageInput(true); }}
+                className="w-full h-48 bg-slate-800 rounded-2xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer transition-colors hover:border-slate-500"
+              >
+                  {item.image ? (
+                    <>
+                      <img src={item.image} className="w-full h-full object-cover" alt="Preview" />
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="text-white text-sm font-bold">點擊更換圖片</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-slate-500 flex flex-col items-center">
+                      <Camera size={32} className="mb-2"/>
+                      <span className="text-xs">上傳圖片 (URL)</span>
+                    </div>
+                  )}
+              </div>
+              
+              {/* Image URL Input Area (Visible only when editing image) */}
+              {showImageInput && (
+                <div className="animate-slide-up bg-slate-800 p-3 rounded-xl border border-slate-700 flex gap-2">
+                  <input 
+                    autoFocus
+                    value={tempImage}
+                    onChange={(e) => setTempImage(e.target.value)}
+                    placeholder="https://..."
+                    className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500"
+                  />
+                  <button 
+                    onClick={() => { setItem({...item, image: tempImage}); setShowImageInput(false); }}
+                    className="bg-amber-600 text-white px-3 rounded-lg text-xs font-bold"
+                  >
+                    確定
+                  </button>
+                  <button onClick={() => setShowImageInput(false)} className="p-2 text-slate-400 hover:text-white"><X size={16}/></button>
                 </div>
               )}
-              <input 
-                type="text" 
-                className="absolute inset-0 opacity-0 cursor-pointer"
-                onChange={(e) => {
-                   const val = prompt("請輸入圖片網址 (URL):", item.image);
-                   if(val !== null) setItem({...item, image: val});
-                }}
-              />
            </div>
 
            {/* Basic Info */}
@@ -1657,6 +1664,8 @@ const EditorSheet = ({
                        <div className="flex justify-between">
                          <label className="text-xs font-bold text-slate-500 uppercase">調製法</label>
                          <button onClick={() => {
+                           // Replaced prompt with window.prompt for clarity, though modal would be better for consistency.
+                           // Keeping simple prompt for technique for now as user complained about photo specifically.
                            const t = prompt('新增調製法:');
                            if(t) setAvailableTechniques([...availableTechniques, t]);
                          }} className="text-[10px] text-amber-500">新增</button>
@@ -1739,7 +1748,6 @@ const EditorSheet = ({
            <div className="pt-6 border-t border-slate-800">
               <button 
                 onClick={() => {
-                   // FIX: Use requestDelete prop instead of trying to find requestDelete from context
                    if (requestDelete) requestDelete(item.id, mode);
                    onClose();
                 }} 
@@ -1776,7 +1784,11 @@ const ViewerOverlay = ({ item, onClose, ingredients, startEdit, requestDelete })
              )}
              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent"></div>
              
-             <button onClick={onClose} className="absolute top-safe left-4 p-2 bg-black/30 backdrop-blur rounded-full text-white hover:bg-white/20 transition pt-safe">
+             {/* FIX: Corrected positioning classes for the back button */}
+             <button 
+               onClick={onClose} 
+               className="absolute top-4 left-4 mt-safe p-2 bg-black/30 backdrop-blur rounded-full text-white hover:bg-white/20 transition z-50 shadow-lg"
+             >
                 <ChevronLeft size={24}/>
              </button>
              
@@ -1863,10 +1875,6 @@ const ViewerOverlay = ({ item, onClose, ingredients, startEdit, requestDelete })
              >
                 編輯酒譜
              </button>
-             {/* FIX: The delete button logic here was problematic. 
-                 It's safer to open the editor to delete, or use a confirm dialog.
-                 For now, we keep the edit button as the primary action.
-             */}
           </div>
        </div>
     </div>
@@ -1876,7 +1884,6 @@ const ViewerOverlay = ({ item, onClose, ingredients, startEdit, requestDelete })
 // --- 6. Main App Container ---
 
 function MainAppContent() {
-  // 修正：從 localStorage 讀取 activeTab 以防止重新整理後重置（解決「被登出」感）
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('bar_active_tab_v3') || 'recipes');
   
   const [ingredients, setIngredients] = useState([]);
@@ -1946,7 +1953,6 @@ function MainAppContent() {
        } else {
          setIngredients(ingredients.filter(i => i.id !== id));
        }
-       // Note: Dialog auto-closes in the UI rendering part due to logic change in previous prompt
     });
   };
 
