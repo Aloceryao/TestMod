@@ -38,7 +38,103 @@ import {
 } from 'lucide-react';
 
 // ==========================================
-// 0. Error Boundary (防崩潰機制)
+// 0. IndexedDB Image Storage (解決容量問題的核心)
+// ==========================================
+
+const DB_NAME = 'BarManagerDB';
+const STORE_NAME = 'images';
+
+const initDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+    request.onsuccess = (event) => resolve(event.target.result);
+    request.onerror = (event) => reject(event.target.error);
+  });
+};
+
+const ImageDB = {
+  save: async (id, dataUrl) => {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.put(dataUrl, id);
+      tx.oncomplete = () => resolve(id);
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+  get: async (id) => {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+  delete: async (id) => {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+};
+
+// Hook to load image from DB asynchronously
+const useImageLoader = (imageId) => {
+  const [src, setSrc] = useState(null);
+
+  useEffect(() => {
+    if (!imageId) {
+      setSrc(null);
+      return;
+    }
+    // If it's a legacy base64 string or web URL, use it directly
+    if (imageId.startsWith('data:') || imageId.startsWith('http')) {
+      setSrc(imageId);
+      return;
+    }
+
+    // Otherwise, try to fetch from IndexedDB
+    let isMounted = true;
+    ImageDB.get(imageId).then(data => {
+      if (isMounted && data) setSrc(data);
+    }).catch(err => console.error("Failed to load image:", err));
+
+    return () => { isMounted = false; };
+  }, [imageId]);
+
+  return src;
+};
+
+// Component to display Async Images
+const AsyncImage = ({ imageId, alt, className, fallback }) => {
+  const src = useImageLoader(imageId);
+  
+  if (!src) {
+    return fallback || (
+      <div className={`bg-slate-800 flex items-center justify-center text-slate-700 ${className}`}>
+        <Wine size={32} opacity={0.3}/>
+      </div>
+    );
+  }
+  
+  return <img src={src} alt={alt} className={className} loading="lazy" />;
+};
+
+// ==========================================
+// 0.5 Error Boundary
 // ==========================================
 
 class ErrorBoundary extends React.Component {
@@ -64,28 +160,12 @@ class ErrorBoundary extends React.Component {
           </div>
           <h1 className="text-2xl font-bold mb-2">應用程式發生錯誤</h1>
           <p className="text-slate-400 mb-8 text-sm leading-relaxed max-w-xs">
-            可能是圖片檔案過大導致儲存空間不足。<br/>別擔心，您的部分資料可能還在。
+            發生了未預期的錯誤。您的資料應該是安全的。<br/>請嘗試重新整理。
           </p>
           <div className="flex flex-col gap-3 w-full max-w-xs">
              <button onClick={() => window.location.reload()} className="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-xl font-bold text-white shadow-lg">
                重新整理頁面
              </button>
-             <button 
-               onClick={() => { 
-                 if(confirm('警告：這將會清除所有資料並重置 APP。確定要繼續嗎？')) {
-                   localStorage.clear(); 
-                   window.location.reload(); 
-                 }
-               }} 
-               className="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-slate-400"
-             >
-               重置所有資料 (修復)
-             </button>
-          </div>
-          <div className="mt-8 p-4 bg-black/50 rounded-xl border border-slate-800 w-full max-w-xs text-left overflow-hidden">
-            <p className="text-[10px] font-mono text-rose-400 break-all">
-              {this.state.error?.toString()}
-            </p>
           </div>
         </div>
       );
@@ -98,50 +178,32 @@ class ErrorBoundary extends React.Component {
 // 1. Constants & Helper Functions
 // ==========================================
 
-// Changed from CONSTANT to DEFAULT VALUE
 const DEFAULT_BASE_SPIRITS = ['Gin 琴酒', 'Whisky 威士忌', 'Rum 蘭姆酒', 'Tequila 龍舌蘭', 'Vodka 伏特加', 'Brandy 白蘭地', 'Liqueur 利口酒'];
 
-// --- Icon Registry for Category Blocks ---
 const ICON_TYPES = {
   whisky: { label: '威士忌杯 (Rock)', component: (props) => (
-    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 4h14v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4z" /><path d="M5 10h14" /><path d="M9 14h6" opacity="0.5"/>
-    </svg>
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 4h14v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4z" /><path d="M5 10h14" /><path d="M9 14h6" opacity="0.5"/></svg>
   )},
   martini: { label: '馬丁尼杯 (Martini)', component: (props) => (
-    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8 22h8" /><path d="M12 22v-11" /><path d="M2 3l10 10 10-10" /><path d="M5 6h14" opacity="0.5"/>
-    </svg>
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 22h8" /><path d="M12 22v-11" /><path d="M2 3l10 10 10-10" /><path d="M5 6h14" opacity="0.5"/></svg>
   )},
   highball: { label: '高球杯 (Highball)', component: (props) => (
-    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 3h10v18a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V3z" /><path d="M7 9h10" /><path d="M7 15h10" /><line x1="10" y1="3" x2="10" y2="22" strokeDasharray="2 2" opacity="0.3"/>
-    </svg>
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h10v18a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V3z" /><path d="M7 9h10" /><path d="M7 15h10" /><line x1="10" y1="3" x2="10" y2="22" strokeDasharray="2 2" opacity="0.3"/></svg>
   )},
   snifter: { label: '白蘭地杯 (Snifter)', component: (props) => (
-    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 21h10" /><path d="M12 21v-3" /><path d="M6 10h12" /><path d="M19 10a7 7 0 0 0-14 0c0 4.5 3.5 8 7 8s7-3.5 7-8z" /><path d="M12 10v4" opacity="0.5"/>
-    </svg>
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 21h10" /><path d="M12 21v-3" /><path d="M6 10h12" /><path d="M19 10a7 7 0 0 0-14 0c0 4.5 3.5 8 7 8s7-3.5 7-8z" /><path d="M12 10v4" opacity="0.5"/></svg>
   )},
   shot: { label: '一口杯 (Shot)', component: (props) => (
-    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 3l-2 18H8L6 3h12z" /><path d="M7 9h10" opacity="0.5"/>
-    </svg>
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 3l-2 18H8L6 3h12z" /><path d="M7 9h10" opacity="0.5"/></svg>
   )},
   wine: { label: '酒瓶/酒杯 (Wine)', component: (props) => (
-    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-       <path d="M9 21h6" /><path d="M12 21v-6" /><path d="M12 15a5 5 0 0 0 5-5c0-2-.5-4-1.5-4.5l-3.5 2-3.5-2C7.5 6 7 8 7 10a5 5 0 0 0 5 5z"/>
-    </svg>
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21h6" /><path d="M12 21v-6" /><path d="M12 15a5 5 0 0 0 5-5c0-2-.5-4-1.5-4.5l-3.5 2-3.5-2C7.5 6 7 8 7 10a5 5 0 0 0 5 5z"/></svg>
   )},
   shaker: { label: '雪克杯 (Shaker)', component: (props) => (
-    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 9h12v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9z" /><path d="M6 5h12v4H6z" /><path d="M9 2h6v3H9z" />
-    </svg>
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9h12v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9z" /><path d="M6 5h12v4H6z" /><path d="M9 2h6v3H9z" /></svg>
   )},
   soft: { label: '軟飲 (Soft)', component: (props) => (
-     <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-       <circle cx="12" cy="12" r="9" /><path d="M12 3v18" opacity="0.3"/><path d="M3 12h18" opacity="0.3"/><path d="M18.36 5.64l-12.72 12.72" opacity="0.3"/><path d="M5.64 5.64l12.72 12.72" opacity="0.3"/>
-     </svg>
+     <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 3v18" opacity="0.3"/><path d="M3 12h18" opacity="0.3"/><path d="M18.36 5.64l-12.72 12.72" opacity="0.3"/><path d="M5.64 5.64l12.72 12.72" opacity="0.3"/></svg>
   )}
 };
 
@@ -157,7 +219,6 @@ const safeNumber = (num) => {
   return isNaN(n) ? 0 : n;
 };
 
-// --- Optimized Calculation Logic ---
 const calculateRecipeStats = (recipe, allIngredients) => {
   if (!recipe || !recipe.ingredients) return { cost: 0, costRate: 0, abv: 0, volume: 0, price: 0, finalAbv: 0 };
   
@@ -244,13 +305,11 @@ const RecipeCard = memo(({ recipe, ingredients, onClick }) => {
   return (
     <div onClick={() => onClick(recipe)} className="group bg-slate-800 rounded-2xl overflow-hidden shadow-lg border border-slate-800 hover:border-slate-700 transition-all active:scale-[0.98] flex flex-row h-36 w-full cursor-pointer">
       <div className="w-32 h-full relative shrink-0 bg-slate-900">
-         {recipe.image ? (
-           <img src={recipe.image} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" alt={safeString(recipe.nameZh)} loading="lazy" />
-         ) : (
-           <div className="w-full h-full flex items-center justify-center text-slate-700">
-             <Wine size={32} opacity={0.3} />
-           </div>
-         )}
+         <AsyncImage 
+            imageId={recipe.image} 
+            alt={safeString(recipe.nameZh)}
+            className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+         />
       </div>
       
       <div className="flex-1 p-3 flex flex-col justify-between overflow-hidden">
@@ -260,17 +319,7 @@ const RecipeCard = memo(({ recipe, ingredients, onClick }) => {
              
              <div className="flex flex-col items-end gap-1 shrink-0">
                 <div className="text-amber-400 font-bold text-lg font-mono leading-none">${stats.price}</div>
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const q = encodeURIComponent(`${recipe.nameZh} ${recipe.nameEn} 雞尾酒 調酒`);
-                    window.open(`https://www.google.com/search?q=${q}`, '_blank');
-                  }}
-                  className="text-slate-500 hover:text-blue-400 transition-colors p-1 -mr-1"
-                  title="搜尋 Google"
-                >
-                  <Globe size={14} />
-                </button>
+                {/* Removed Google Search button to declutter, making card clickable area cleaner */}
              </div>
            </div>
            <p className="text-slate-400 text-xs font-medium tracking-wider uppercase truncate opacity-80 mb-1">{safeString(recipe.nameEn)}</p>
@@ -347,10 +396,8 @@ const SingleItemScreen = ({ ingredients, searchTerm, activeBlock }) => {
       }
 
       if (activeBlock) {
-        const blockName = activeBlock.nameZh || activeBlock; // Handle object or string
-        // Check SubType (e.g. Gin)
+        const blockName = activeBlock.nameZh || activeBlock;
         if (i.type === 'alcohol' && i.subType && safeString(i.subType).includes(blockName)) return true;
-        // Check generic type
         if (blockName.includes('Soft') && i.type === 'soft') return true;
         if (blockName.includes('Other') && i.type === 'other') return true;
         return false;
@@ -364,7 +411,7 @@ const SingleItemScreen = ({ ingredients, searchTerm, activeBlock }) => {
     <div className="space-y-3">
       {filtered.map(ing => {
         const pricePerMl = safeNumber(ing.price) / safeNumber(ing.volume);
-        const shotCost = pricePerMl * 30; // 30ml standard shot
+        const shotCost = pricePerMl * 30;
         const shotPrice = Math.ceil((shotCost / 0.3) / 10) * 10;
         
         return (
@@ -387,6 +434,7 @@ const SingleItemScreen = ({ ingredients, searchTerm, activeBlock }) => {
 
 // --- Featured Section Screen ---
 const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem, ingredients, showConfirm }) => {
+  // ... (Logic same as before, just wrapping image in AsyncImage if needed, but cards use RecipeCard which is updated)
   const [activeSectionId, setActiveSectionId] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -473,7 +521,6 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
     setSections(updatedSections);
   };
 
-  // 1. Root Level: List of Sections
   if (!activeSectionId) {
     return (
       <div className="h-full flex flex-col animate-fade-in w-full bg-slate-950">
@@ -481,18 +528,8 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
              <div className="flex justify-between items-center mt-3">
                 <h2 className="text-2xl font-serif text-slate-100">精選專區</h2>
                 <div className="flex gap-3">
-                  <button 
-                    onClick={() => { setIsAdding(!isAdding); setIsEditing(false); }} 
-                    className={`p-2 rounded-full border transition-all ${isAdding ? 'bg-amber-600 border-amber-500 text-white' : 'text-slate-400 border-slate-700 bg-slate-800'}`}
-                  >
-                     <Plus size={20} />
-                  </button>
-                  <button 
-                    onClick={() => { setIsEditing(!isEditing); setIsAdding(false); }} 
-                    className={`p-2 rounded-full border transition-all ${isEditing ? 'bg-slate-700 border-slate-500 text-white' : 'text-slate-400 border-slate-700 bg-slate-800'}`}
-                  >
-                     <Edit3 size={20} />
-                  </button>
+                  <button onClick={() => { setIsAdding(!isAdding); setIsEditing(false); }} className={`p-2 rounded-full border transition-all ${isAdding ? 'bg-amber-600 border-amber-500 text-white' : 'text-slate-400 border-slate-700 bg-slate-800'}`}><Plus size={20} /></button>
+                  <button onClick={() => { setIsEditing(!isEditing); setIsAdding(false); }} className={`p-2 rounded-full border transition-all ${isEditing ? 'bg-slate-700 border-slate-500 text-white' : 'text-slate-400 border-slate-700 bg-slate-800'}`}><Edit3 size={20} /></button>
                 </div>
              </div>
          </div>
@@ -500,13 +537,7 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
          <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24 custom-scrollbar">
             {isAdding && (
                 <div className="bg-slate-800 p-3 rounded-xl flex gap-2 border border-slate-700 animate-slide-up">
-                   <input 
-                     value={newSectionTitle} 
-                     onChange={e => setNewSectionTitle(e.target.value)}
-                     placeholder="新專區名稱 (如: 影視專區)"
-                     className="flex-1 bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white outline-none"
-                     autoFocus
-                   />
+                   <input value={newSectionTitle} onChange={e => setNewSectionTitle(e.target.value)} placeholder="新專區名稱" className="flex-1 bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white outline-none" autoFocus />
                    <button onClick={handleAddSection} className="bg-amber-600 text-white px-3 py-2 rounded font-bold text-sm">確認</button>
                 </div>
              )}
@@ -514,66 +545,31 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
             <div className="space-y-4">
               {sections.map(section => (
                 <div key={section.id} className="relative group">
-                  <div 
-                    onClick={() => setActiveSectionId(section.id)} 
-                    className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-2xl p-6 cursor-pointer hover:border-amber-500/50 transition-all relative overflow-hidden shadow-lg h-32 flex flex-col justify-center active:scale-[0.98]"
-                  >
-                      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <BookOpen size={80} />
-                      </div>
+                  <div onClick={() => setActiveSectionId(section.id)} className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-2xl p-6 cursor-pointer hover:border-amber-500/50 transition-all relative overflow-hidden shadow-lg h-32 flex flex-col justify-center active:scale-[0.98]">
+                      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><BookOpen size={80} /></div>
                       <h2 className="text-2xl font-serif text-white font-bold mb-1 relative z-10">{section.title}</h2>
                       <p className="text-slate-500 text-sm relative z-10">{section.subgroups?.length || 0} 個子分類</p>
                   </div>
-                  
-                  {isEditing && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleDeleteSection(section.id); }}
-                      className="absolute -top-2 -right-2 bg-rose-600 text-white p-2 rounded-full shadow-lg z-30 animate-scale-in hover:bg-rose-500"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
+                  {isEditing && <button onClick={(e) => { e.stopPropagation(); handleDeleteSection(section.id); }} className="absolute -top-2 -right-2 bg-rose-600 text-white p-2 rounded-full shadow-lg z-30 animate-scale-in hover:bg-rose-500"><Trash2 size={16} /></button>}
                 </div>
               ))}
             </div>
             
-            {sections.length === 0 && !isAdding && (
-               <div className="text-center py-20 text-slate-500">
-                  <FolderPlus size={48} className="mx-auto mb-4 opacity-30" />
-                  <p>尚無專區</p>
-                  <p className="text-xs mt-2">點擊右上方「+」按鈕新增</p>
-               </div>
-            )}
+            {sections.length === 0 && !isAdding && <div className="text-center py-20 text-slate-500"><FolderPlus size={48} className="mx-auto mb-4 opacity-30" /><p>尚無專區</p></div>}
          </div>
       </div>
     );
   }
 
-  // 2. Detail Level: Section Content
   return (
     <div className="h-full flex flex-col animate-slide-up w-full bg-slate-950">
        <div className="shrink-0 bg-slate-950/95 backdrop-blur z-20 border-b border-slate-800 shadow-md px-4 pt-safe pb-3">
            <div className="flex items-center gap-3 mt-3">
-              <button 
-                onClick={() => setActiveSectionId(null)} 
-                className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white border border-slate-700 active:bg-slate-700"
-              >
-                 <ChevronLeft size={20} />
-              </button>
+              <button onClick={() => setActiveSectionId(null)} className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white border border-slate-700 active:bg-slate-700"><ChevronLeft size={20} /></button>
               <h2 className="text-xl font-serif text-white font-bold flex-1 truncate">{activeSection.title}</h2>
               <div className="flex gap-2">
-                 <button 
-                   onClick={() => { setIsAdding(!isAdding); setIsEditing(false); }} 
-                   className={`p-2 rounded-full border transition-all ${isAdding ? 'bg-amber-600 border-amber-500 text-white' : 'text-slate-500 border-slate-700 bg-slate-800'}`}
-                 >
-                    <Plus size={18} />
-                 </button>
-                 <button 
-                   onClick={() => { setIsEditing(!isEditing); setIsAdding(false); }} 
-                   className={`p-2 rounded-full border transition-all ${isEditing ? 'bg-slate-700 border-slate-500 text-white' : 'text-slate-500 border-slate-700 bg-slate-800'}`}
-                 >
-                    <Edit3 size={18} />
-                 </button>
+                 <button onClick={() => { setIsAdding(!isAdding); setIsEditing(false); }} className={`p-2 rounded-full border transition-all ${isAdding ? 'bg-amber-600 border-amber-500 text-white' : 'text-slate-500 border-slate-700 bg-slate-800'}`}><Plus size={18} /></button>
+                 <button onClick={() => { setIsEditing(!isEditing); setIsAdding(false); }} className={`p-2 rounded-full border transition-all ${isEditing ? 'bg-slate-700 border-slate-500 text-white' : 'text-slate-500 border-slate-700 bg-slate-800'}`}><Edit3 size={18} /></button>
               </div>
            </div>
        </div>
@@ -581,13 +577,7 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
        <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-24 custom-scrollbar">
            {isAdding && (
               <div className="bg-slate-800 p-3 rounded-xl flex gap-2 border border-slate-700 animate-slide-up">
-                 <input 
-                   value={newSubgroupTitle} 
-                   onChange={e => setNewSubgroupTitle(e.target.value)}
-                   placeholder="新子分類名稱 (如: 慾望城市)"
-                   className="flex-1 bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white outline-none"
-                   autoFocus
-                 />
+                 <input value={newSubgroupTitle} onChange={e => setNewSubgroupTitle(e.target.value)} placeholder="新子分類名稱" className="flex-1 bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white outline-none" autoFocus />
                  <button onClick={() => handleAddSubgroup(activeSection.id)} className="bg-amber-600 text-white px-3 py-2 rounded font-bold text-sm">確認</button>
               </div>
            )}
@@ -598,18 +588,10 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
                     <div className="flex justify-between items-center border-b border-slate-800 pb-2">
                        <h3 className="text-lg font-bold text-amber-500">{subgroup.title}</h3>
                        <div className="flex gap-2">
-                          {isEditing && (
-                             <button onClick={() => handleDeleteSubgroup(activeSection.id, subgroup.id)} className="text-rose-500 p-1"><Trash2 size={16}/></button>
-                          )}
-                          <button 
-                             onClick={() => { setPickingForSubgroupId(subgroup.id); setShowPicker(true); }}
-                             className="text-slate-400 hover:text-white flex items-center gap-1 text-xs bg-slate-800 px-2 py-1 rounded-full border border-slate-700"
-                          >
-                             <Plus size={12}/> 新增酒譜
-                          </button>
+                          {isEditing && <button onClick={() => handleDeleteSubgroup(activeSection.id, subgroup.id)} className="text-rose-500 p-1"><Trash2 size={16}/></button>}
+                          <button onClick={() => { setPickingForSubgroupId(subgroup.id); setShowPicker(true); }} className="text-slate-400 hover:text-white flex items-center gap-1 text-xs bg-slate-800 px-2 py-1 rounded-full border border-slate-700"><Plus size={12}/> 新增酒譜</button>
                        </div>
                     </div>
-
                     <div className="grid gap-3">
                        {subgroup.recipeIds.length > 0 ? (
                           subgroup.recipeIds.map(rid => {
@@ -618,36 +600,20 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
                              return (
                                 <div key={rid} className="relative group">
                                    <RecipeCard recipe={recipe} ingredients={ingredients} onClick={setViewingItem} />
-                                   {isEditing && (
-                                      <button 
-                                         onClick={(e) => { e.stopPropagation(); handleRemoveRecipeFromSubgroup(subgroup.id, rid); }}
-                                         className="absolute top-2 right-2 bg-rose-600 text-white p-1.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                                      >
-                                         <X size={14}/>
-                                      </button>
-                                   )}
+                                   {isEditing && <button onClick={(e) => { e.stopPropagation(); handleRemoveRecipeFromSubgroup(subgroup.id, rid); }} className="absolute top-2 right-2 bg-rose-600 text-white p-1.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"><X size={14}/></button>}
                                 </div>
                              );
                           })
-                       ) : (
-                          <div className="text-sm text-slate-600 italic py-2">點擊上方按鈕加入酒譜...</div>
-                       )}
+                       ) : <div className="text-sm text-slate-600 italic py-2">點擊上方按鈕加入酒譜...</div>}
                     </div>
                  </div>
               ))}
-              
-              {activeSection.subgroups.length === 0 && !isAdding && (
-                 <div className="text-center text-slate-500 py-10">
-                    <FolderPlus size={32} className="mx-auto mb-2 opacity-30" />
-                    <p>此專區還沒有分類</p>
-                    <p className="text-xs mt-1">點擊上方「+」新增分類</p>
-                 </div>
-              )}
+              {activeSection.subgroups.length === 0 && !isAdding && <div className="text-center text-slate-500 py-10"><FolderPlus size={32} className="mx-auto mb-2 opacity-30" /><p>此專區還沒有分類</p></div>}
            </div>
        </div>
 
        {showPicker && (
-         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col pt-10 animate-fade-in">
+         <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex flex-col pt-10 animate-fade-in">
             <div className="bg-slate-900 flex-1 rounded-t-3xl border-t border-slate-700 flex flex-col overflow-hidden">
                <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                   <h3 className="text-lg font-bold text-white">選擇酒譜</h3>
@@ -656,25 +622,13 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
                <div className="p-4 bg-slate-900 border-b border-slate-800">
                   <div className="relative">
                      <Search className="absolute left-3 top-2.5 text-slate-500 w-4 h-4"/>
-                     <input 
-                       value={pickerSearch} 
-                       onChange={e => setPickerSearch(e.target.value)}
-                       placeholder="搜尋名稱..."
-                       className="w-full bg-slate-800 text-white pl-9 py-2 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                     />
+                     <input value={pickerSearch} onChange={e => setPickerSearch(e.target.value)} placeholder="搜尋名稱..." className="w-full bg-slate-800 text-white pl-9 py-2 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
                   </div>
                </div>
                <div className="flex-1 overflow-y-auto p-4 space-y-2">
                   {recipes.filter(r => safeString(r.nameZh).includes(pickerSearch) || safeString(r.nameEn).toLowerCase().includes(pickerSearch.toLowerCase())).map(r => (
-                     <button 
-                        key={r.id}
-                        onClick={() => handleAddRecipeToSubgroup(r.id)}
-                        className="w-full text-left p-3 rounded-xl bg-slate-800 border border-slate-700 hover:border-amber-500 flex justify-between items-center group"
-                     >
-                        <div>
-                           <div className="text-white font-medium">{r.nameZh}</div>
-                           <div className="text-xs text-slate-500">{r.nameEn}</div>
-                        </div>
+                     <button key={r.id} onClick={() => handleAddRecipeToSubgroup(r.id)} className="w-full text-left p-3 rounded-xl bg-slate-800 border border-slate-700 hover:border-amber-500 flex justify-between items-center group">
+                        <div><div className="text-white font-medium">{r.nameZh}</div><div className="text-xs text-slate-500">{r.nameEn}</div></div>
                         <Plus className="text-amber-500 opacity-0 group-hover:opacity-100" size={16}/>
                      </button>
                   ))}
@@ -686,88 +640,26 @@ const FeaturedSectionScreen = ({ sections, setSections, recipes, setViewingItem,
   );
 };
 
-// --- New Category Edit Modal ---
+// ... CategoryEditModal & CategoryGrid are same as before ...
 const CategoryEditModal = ({ isOpen, onClose, onSave, categories }) => {
   const [nameZh, setNameZh] = useState('');
   const [nameEn, setNameEn] = useState('');
   const [iconType, setIconType] = useState('whisky');
   const [gradient, setGradient] = useState('from-slate-600 to-gray-700');
-
   if (!isOpen) return null;
-
-  const handleSubmit = () => {
-    if(!nameZh) return;
-    onSave({
-      id: generateId(),
-      nameZh,
-      nameEn,
-      iconType,
-      gradient
-    });
-    setNameZh('');
-    setNameEn('');
-    onClose();
-  };
-
-  const gradients = [
-      { id: 'blue', val: 'from-blue-600 to-indigo-700', label: '藍' },
-      { id: 'amber', val: 'from-amber-600 to-orange-700', label: '琥珀' },
-      { id: 'emerald', val: 'from-emerald-600 to-teal-700', label: '翠綠' },
-      { id: 'rose', val: 'from-rose-600 to-pink-700', label: '玫瑰' },
-      { id: 'purple', val: 'from-purple-600 to-violet-700', label: '紫' },
-      { id: 'cyan', val: 'from-cyan-600 to-blue-700', label: '青' },
-      { id: 'slate', val: 'from-slate-600 to-gray-700', label: '灰' },
-  ];
-
+  const handleSubmit = () => { if(!nameZh) return; onSave({ id: generateId(), nameZh, nameEn, iconType, gradient }); setNameZh(''); setNameEn(''); onClose(); };
+  const gradients = [ { id: 'blue', val: 'from-blue-600 to-indigo-700' }, { id: 'amber', val: 'from-amber-600 to-orange-700' }, { id: 'emerald', val: 'from-emerald-600 to-teal-700' }, { id: 'rose', val: 'from-rose-600 to-pink-700' }, { id: 'purple', val: 'from-purple-600 to-violet-700' }, { id: 'cyan', val: 'from-cyan-600 to-blue-700' }, { id: 'slate', val: 'from-slate-600 to-gray-700' } ];
   return (
-    // FIX: Increased z-index to 60 to be above Editor and Viewer
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
        <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl shadow-2xl p-6 animate-scale-in">
-          <div className="flex justify-between items-center mb-6">
-             <h3 className="text-xl font-bold text-white">新增分類色塊</h3>
-             <button onClick={onClose}><X className="text-slate-400"/></button>
-          </div>
-          
+          <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-white">新增分類色塊</h3><button onClick={onClose}><X className="text-slate-400"/></button></div>
           <div className="space-y-4">
-             <div>
-               <label className="text-xs font-bold text-slate-500 uppercase">中文名稱</label>
-               <input value={nameZh} onChange={e=>setNameZh(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white outline-none focus:border-amber-500" placeholder="例如: 威士忌" />
-             </div>
-             <div>
-               <label className="text-xs font-bold text-slate-500 uppercase">英文/副標題</label>
-               <input value={nameEn} onChange={e=>setNameEn(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white outline-none focus:border-amber-500" placeholder="例如: Whisky" />
-             </div>
-             <div>
-               <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">選擇圖示</label>
-               <div className="grid grid-cols-4 gap-2">
-                 {Object.entries(ICON_TYPES).map(([key, val]) => (
-                   <button 
-                     key={key} 
-                     onClick={()=>setIconType(key)} 
-                     className={`p-2 rounded-lg border flex items-center justify-center ${iconType === key ? 'bg-slate-700 border-amber-500 text-amber-500' : 'border-slate-700 text-slate-500'}`}
-                   >
-                     {val.component({ width: 20, height: 20 })}
-                   </button>
-                 ))}
-               </div>
-             </div>
-             <div>
-               <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">選擇顏色</label>
-               <div className="flex flex-wrap gap-2">
-                 {gradients.map(g => (
-                   <button 
-                     key={g.id} 
-                     onClick={()=>setGradient(g.val)}
-                     className={`w-8 h-8 rounded-full bg-gradient-to-br ${g.val} ring-2 ring-offset-2 ring-offset-slate-900 ${gradient === g.val ? 'ring-white' : 'ring-transparent'}`}
-                   />
-                 ))}
-               </div>
-             </div>
+             <div><label className="text-xs font-bold text-slate-500 uppercase">中文名稱</label><input value={nameZh} onChange={e=>setNameZh(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white outline-none focus:border-amber-500" placeholder="例如: 威士忌" /></div>
+             <div><label className="text-xs font-bold text-slate-500 uppercase">英文/副標題</label><input value={nameEn} onChange={e=>setNameEn(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white outline-none focus:border-amber-500" placeholder="例如: Whisky" /></div>
+             <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">選擇圖示</label><div className="grid grid-cols-4 gap-2">{Object.entries(ICON_TYPES).map(([key, val]) => (<button key={key} onClick={()=>setIconType(key)} className={`p-2 rounded-lg border flex items-center justify-center ${iconType === key ? 'bg-slate-700 border-amber-500 text-amber-500' : 'border-slate-700 text-slate-500'}`}>{val.component({ width: 20, height: 20 })}</button>))}</div></div>
+             <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">選擇顏色</label><div className="flex flex-wrap gap-2">{gradients.map(g => (<button key={g.id} onClick={()=>setGradient(g.val)} className={`w-8 h-8 rounded-full bg-gradient-to-br ${g.val} ring-2 ring-offset-2 ring-offset-slate-900 ${gradient === g.val ? 'ring-white' : 'ring-transparent'}`} />))}</div></div>
           </div>
-
-          <button onClick={handleSubmit} className="w-full bg-amber-600 text-white font-bold py-3 rounded-xl mt-6">
-            建立分類
-          </button>
+          <button onClick={handleSubmit} className="w-full bg-amber-600 text-white font-bold py-3 rounded-xl mt-6">建立分類</button>
        </div>
     </div>
   );
@@ -778,50 +670,17 @@ const CategoryGrid = ({ categories, onSelect, onAdd, onDelete, isEditing, toggle
     <div className="p-4 animate-fade-in">
        <div className="flex justify-between items-center mb-4">
           <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider">快速分類</h3>
-          <button 
-            onClick={toggleEditing} 
-            className={`text-xs px-2 py-1 rounded border transition-colors ${isEditing ? 'bg-slate-700 text-white border-slate-500' : 'text-slate-500 border-transparent hover:text-slate-300'}`}
-          >
-            {isEditing ? '完成' : '編輯'}
-          </button>
+          <button onClick={toggleEditing} className={`text-xs px-2 py-1 rounded border transition-colors ${isEditing ? 'bg-slate-700 text-white border-slate-500' : 'text-slate-500 border-transparent hover:text-slate-300'}`}>{isEditing ? '完成' : '編輯'}</button>
        </div>
        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {categories.map((cat, idx) => (
-            <div 
-              key={cat.id || idx} 
-              onClick={() => !isEditing && onSelect(cat)}
-              className={`relative h-28 rounded-2xl bg-gradient-to-br ${cat.gradient || 'from-slate-700 to-slate-800'} shadow-lg overflow-hidden cursor-pointer hover:scale-[1.02] active:scale-95 transition-all border border-white/10 group`}
-            >
-               {/* Background Decorative Icon */}
-               <div className="absolute -right-2 -bottom-4 w-24 h-24 text-white opacity-20 transform rotate-[-15deg] group-hover:scale-110 group-hover:opacity-30 transition-all duration-500 pointer-events-none">
-                 <CategoryIcon iconType={cat.iconType} />
-               </div>
-
-               <div className="absolute inset-0 p-4 flex flex-col justify-center items-center z-10">
-                  <span className="text-white font-bold text-xl text-center drop-shadow-md tracking-wide">{cat.nameZh}</span>
-                  <span className="text-[10px] text-white/70 font-medium uppercase tracking-wider mt-1 border-t border-white/20 pt-1 px-2">{cat.nameEn}</span>
-               </div>
-               
-               {isEditing && (
-                 <button 
-                   onClick={(e) => { e.stopPropagation(); onDelete(cat.id); }}
-                   className="absolute top-2 right-2 bg-rose-500 text-white rounded-full p-1.5 shadow-md hover:bg-rose-600 animate-scale-in z-20"
-                 >
-                   <X size={14} strokeWidth={3} />
-                 </button>
-               )}
+            <div key={cat.id || idx} onClick={() => !isEditing && onSelect(cat)} className={`relative h-28 rounded-2xl bg-gradient-to-br ${cat.gradient || 'from-slate-700 to-slate-800'} shadow-lg overflow-hidden cursor-pointer hover:scale-[1.02] active:scale-95 transition-all border border-white/10 group`}>
+               <div className="absolute -right-2 -bottom-4 w-24 h-24 text-white opacity-20 transform rotate-[-15deg] group-hover:scale-110 group-hover:opacity-30 transition-all duration-500 pointer-events-none"><CategoryIcon iconType={cat.iconType} /></div>
+               <div className="absolute inset-0 p-4 flex flex-col justify-center items-center z-10"><span className="text-white font-bold text-xl text-center drop-shadow-md tracking-wide">{cat.nameZh}</span><span className="text-[10px] text-white/70 font-medium uppercase tracking-wider mt-1 border-t border-white/20 pt-1 px-2">{cat.nameEn}</span></div>
+               {isEditing && <button onClick={(e) => { e.stopPropagation(); onDelete(cat.id); }} className="absolute top-2 right-2 bg-rose-500 text-white rounded-full p-1.5 shadow-md hover:bg-rose-600 animate-scale-in z-20"><X size={14} strokeWidth={3} /></button>}
             </div>
           ))}
-          
-          <button 
-            onClick={onAdd}
-            className="h-28 rounded-2xl bg-slate-800/50 border-2 border-dashed border-slate-700 flex flex-col items-center justify-center text-slate-500 hover:text-white hover:border-slate-500 hover:bg-slate-800 transition-all gap-2 group"
-          >
-             <div className="p-3 rounded-full bg-slate-800 group-hover:bg-slate-700 transition-colors">
-               <Plus size={24} />
-             </div>
-             <span className="text-xs font-bold">新增分類</span>
-          </button>
+          <button onClick={onAdd} className="h-28 rounded-2xl bg-slate-800/50 border-2 border-dashed border-slate-700 flex flex-col items-center justify-center text-slate-500 hover:text-white hover:border-slate-500 hover:bg-slate-800 transition-all gap-2 group"><div className="p-3 rounded-full bg-slate-800 group-hover:bg-slate-700 transition-colors"><Plus size={24} /></div><span className="text-xs font-bold">新增分類</span></button>
        </div>
     </div>
   );
