@@ -525,7 +525,6 @@ const QuickCalcScreen = ({ ingredients }) => {
   
   const draftStats = useMemo(() => calculateRecipeStats({ ingredients: draftIngs, technique }, ingredients), [draftIngs, technique, ingredients]); 
   
-  // 新增：計算建議售價 (Auto Calc)
   const suggestedPrice = draftStats.cost > 0 ? Math.ceil((draftStats.cost / (targetCostRate / 100)) / 10) * 10 : 0;
 
   return (
@@ -596,7 +595,6 @@ const QuickCalcScreen = ({ ingredients }) => {
                     <span className="text-slate-400 text-sm">預估酒精濃度</span>
                     <span className="text-xl font-bold text-amber-500">{draftStats.finalAbv.toFixed(1)}%</span>
                  </div>
-                 {/* 雞尾酒草稿：建議售價顯示 */}
                  <div className="pt-2 flex justify-between items-center border-t border-slate-700/50 mt-2">
                     <span className="text-slate-400 text-sm">建議售價</span>
                     <span className="text-2xl font-bold text-emerald-400 font-mono">${suggestedPrice}</span>
@@ -805,8 +803,8 @@ const EditorSheet = ({ mode, item, setItem, onSave, onClose, ingredients, availa
   );
 };
 
-// ... (其余部分保持不变) ...
-// (ViewerOverlay, MainAppContent, App)
+// --- 5. Viewer Overlay (Scroll Fix) ---
+
 const ViewerOverlay = ({ item, onClose, ingredients, startEdit, requestDelete }) => {
   if (!item) return null;
   const stats = calculateRecipeStats(item, ingredients);
@@ -817,107 +815,119 @@ const ViewerOverlay = ({ item, onClose, ingredients, startEdit, requestDelete })
        <div className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-fade-in" onClick={onClose} />
        <div className="relative w-full md:w-[600px] bg-slate-950 h-full shadow-2xl flex flex-col animate-slide-up overflow-hidden">
           
-          {/* Hero Image */}
-          <div className="relative h-72 shrink-0">
-             <AsyncImage 
-               imageId={item.image}
-               alt={item.nameZh}
-               className="w-full h-full object-cover"
-             />
-             <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent"></div>
+          {/* Floating Close Button - Fixed position relative to the panel */}
+          <button 
+            onClick={onClose} 
+            className="absolute top-4 left-4 z-50 p-2 bg-black/30 backdrop-blur rounded-full text-white hover:bg-white/20 transition shadow-lg mt-safe"
+          >
+             <ChevronLeft size={24}/>
+          </button>
+
+          {/* Scrollable Content Area (Image + Details) */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-950">
              
-             {/* FIX: Corrected positioning classes for the back button */}
-             <button 
-               onClick={onClose} 
-               className="absolute top-4 left-4 mt-safe p-2 bg-black/30 backdrop-blur rounded-full text-white hover:bg-white/20 transition z-50 shadow-lg"
-             >
-                <ChevronLeft size={24}/>
-             </button>
-             
-             <div className="absolute bottom-0 left-0 p-6 w-full">
-                <div className="flex gap-2 mb-2">
-                   {item.baseSpirit && <Badge color="blue">{item.baseSpirit}</Badge>}
-                   <Badge color="amber">{item.technique}</Badge>
-                </div>
-                <h1 className="text-3xl font-serif font-bold text-white mb-1">{item.nameZh}</h1>
-                <p className="text-slate-300 font-medium text-lg opacity-90">{item.nameEn}</p>
-             </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar bg-slate-950">
-             {/* Stats Row */}
-             {!isSingle && (
-             <div className="flex justify-between items-center bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50 backdrop-blur-sm">
-                <div className="text-center">
-                   <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">酒精濃度</div>
-                   <div className="text-xl font-bold text-amber-500">{stats.finalAbv.toFixed(1)}%</div>
-                </div>
-                <div className="w-px h-8 bg-slate-800"></div>
-                <div className="text-center">
-                   <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">成本率</div>
-                   <div className={`text-xl font-bold ${stats.costRate > 30 ? 'text-rose-400' : 'text-emerald-400'}`}>{stats.costRate.toFixed(0)}%</div>
-                </div>
-                <div className="w-px h-8 bg-slate-800"></div>
-                <div className="text-center">
-                   <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">售價</div>
-                   <div className="text-xl font-bold text-slate-200 font-mono">${item.price || stats.price}</div>
-                </div>
-             </div>
-             )}
-
-             {/* Ingredients */}
-             {!isSingle && (
-             <div>
-                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Layers size={16}/> 材料</h3>
-                <div className="space-y-3">
-                   {item.ingredients.map((ingItem, idx) => {
-                      const ing = ingredients.find(i => i.id === ingItem.id);
-                      return (
-                         <div key={idx} className="flex justify-between items-center py-2 border-b border-slate-800/50">
-                            <span className="text-slate-200 font-medium">{ing?.nameZh || '未知材料'}</span>
-                            <span className="text-amber-500 font-mono font-bold">{ingItem.amount}ml</span>
-                         </div>
-                      );
-                   })}
-                   {item.garnish && (
-                      <div className="flex justify-between items-center py-2 border-b border-slate-800/50">
-                         <span className="text-slate-400 italic">Garnish: {item.garnish}</span>
-                      </div>
-                   )}
-                </div>
-             </div>
-             )}
-
-             {/* Single Cost Table (New) */}
-             {isSingle && <PricingTable recipe={item} />}
-
-             {/* Steps */}
-             <div>
-                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><ListPlus size={16}/> 步驟</h3>
-                <div className="text-slate-300 leading-relaxed whitespace-pre-line bg-slate-900/30 p-4 rounded-xl border border-slate-800/50">
-                   {item.steps || '無步驟描述'}
-                </div>
-             </div>
-
-             {/* Flavor & Tags */}
-             <div className="space-y-4">
-                {item.flavorDescription && (
-                  <div className="bg-gradient-to-br from-amber-900/10 to-transparent p-4 rounded-xl border border-amber-500/10 relative">
-                     <Quote className="absolute top-2 left-2 text-amber-500/20" size={24}/>
-                     <p className="text-amber-200/80 italic text-center relative z-10 text-sm">"{item.flavorDescription}"</p>
-                  </div>
-                )}
+             {/* Hero Image Section */}
+             <div className="relative h-72 w-full">
+                <AsyncImage 
+                  imageId={item.image}
+                  alt={item.nameZh}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent"></div>
                 
-                <div className="flex flex-wrap gap-2">
-                   {item.tags?.map(tag => (
-                      <span key={tag} className="text-xs text-slate-500 bg-slate-900 border border-slate-800 px-3 py-1 rounded-full">#{tag}</span>
-                   ))}
+                <div className="absolute bottom-0 left-0 p-6 w-full">
+                   <div className="flex gap-2 mb-2">
+                      {isSingle ? <Badge color="purple">Single 單品</Badge> : item.baseSpirit && <Badge color="blue">{item.baseSpirit}</Badge>}
+                      {!isSingle && <Badge color="amber">{item.technique}</Badge>}
+                   </div>
+                   <h1 className="text-3xl font-serif font-bold text-white mb-1">{item.nameZh}</h1>
+                   <p className="text-slate-300 font-medium text-lg opacity-90">{item.nameEn}</p>
+                </div>
+             </div>
+
+             {/* Details Content */}
+             <div className="p-6 space-y-8 pb-8">
+                {/* Stats Row */}
+                {!isSingle && (
+                <div className="flex justify-between items-center bg-slate-900/50 p-4 rounded-2xl border border-slate-800/50 backdrop-blur-sm">
+                   <div className="text-center">
+                      <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">酒精濃度</div>
+                      <div className="text-xl font-bold text-amber-500">{stats.finalAbv.toFixed(1)}%</div>
+                   </div>
+                   <div className="w-px h-8 bg-slate-800"></div>
+                   <div className="text-center">
+                      <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">成本率</div>
+                      <div className={`text-xl font-bold ${stats.costRate > 30 ? 'text-rose-400' : 'text-emerald-400'}`}>{stats.costRate.toFixed(0)}%</div>
+                   </div>
+                   <div className="w-px h-8 bg-slate-800"></div>
+                   <div className="text-center">
+                      <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">售價</div>
+                      <div className="text-xl font-bold text-slate-200 font-mono">${item.price || stats.price}</div>
+                   </div>
+                </div>
+                )}
+
+                {/* Single Cost Table (New) */}
+                {isSingle && <PricingTable recipe={item} />}
+
+                {/* Ingredients */}
+                {!isSingle && (
+                <div>
+                   <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Layers size={16}/> 材料</h3>
+                   <div className="space-y-3">
+                      {item.ingredients.map((ingItem, idx) => {
+                         const ing = ingredients.find(i => i.id === ingItem.id);
+                         return (
+                            <div key={idx} className="flex justify-between items-center py-2 border-b border-slate-800/50">
+                               <span className="text-slate-200 font-medium">{ing?.nameZh || '未知材料'}</span>
+                               <span className="text-amber-500 font-mono font-bold">{ingItem.amount}ml</span>
+                            </div>
+                         );
+                      })}
+                      {item.garnish && (
+                         <div className="flex justify-between items-center py-2 border-b border-slate-800/50">
+                            <span className="text-slate-400 italic">Garnish: {item.garnish}</span>
+                         </div>
+                      )}
+                   </div>
+                </div>
+                )}
+
+                {/* Steps */}
+                <div>
+                   <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><ListPlus size={16}/> 步驟/備註</h3>
+                   <div className="text-slate-300 leading-relaxed whitespace-pre-line bg-slate-900/30 p-4 rounded-xl border border-slate-800/50">
+                      {item.steps || '無描述'}
+                   </div>
+                </div>
+
+                {/* Flavor & Tags */}
+                <div className="space-y-4">
+                   {item.flavorDescription && (
+                     <div className="bg-gradient-to-br from-amber-900/10 to-transparent p-4 rounded-xl border border-amber-500/10 relative">
+                        <Quote className="absolute top-2 left-2 text-amber-500/20" size={24}/>
+                        <p className="text-amber-200/80 italic text-center relative z-10 text-sm">"{item.flavorDescription}"</p>
+                     </div>
+                   )}
+                   
+                   <div className="flex flex-wrap gap-2">
+                      {item.tags?.map(tag => (
+                         <span key={tag} className="text-xs text-slate-500 bg-slate-900 border border-slate-800 px-3 py-1 rounded-full">#{tag}</span>
+                      ))}
+                   </div>
                 </div>
              </div>
           </div>
 
-          {/* Footer Actions */}
-          <div className="p-4 border-t border-slate-800 bg-slate-950 pb-safe z-20 flex gap-3">
+          {/* Footer Actions - Fixed at bottom */}
+          <div className="p-4 border-t border-slate-800 bg-slate-950 pb-safe z-20 flex gap-3 shrink-0">
+             <button 
+               onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent((item.nameZh || '') + ' ' + (item.nameEn || '') + ' 調酒')}`, '_blank')}
+               className="px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors flex items-center justify-center border border-slate-700"
+               title="Google 搜尋"
+             >
+                <Globe size={20} />
+             </button>
              <button 
                onClick={() => startEdit(item.isIngredient ? 'ingredient' : 'recipe', item)} 
                className="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-amber-900/20 transition-all active:scale-95"
@@ -1240,7 +1250,7 @@ function MainAppContent() {
         {activeTab === 'tools' && (
            <div className="h-full flex flex-col overflow-y-auto p-6 text-center space-y-6 pt-20 w-full custom-scrollbar pb-24">
              <div className="w-20 h-20 bg-slate-800 rounded-full mx-auto flex items-center justify-center border border-slate-700 shadow-lg shadow-amber-900/10"><Wine size={32} className="text-amber-500"/></div>
-             <h2 className="text-xl font-serif text-slate-200">Bar Manager v9.8 (Fixed)</h2>
+             <h2 className="text-xl font-serif text-slate-200">Bar Manager v9.9 (Scroll Fix)</h2>
              
              <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 w-full">
                 <div className="flex justify-between items-center text-xs text-slate-400 mb-2">
