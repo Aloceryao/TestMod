@@ -1180,9 +1180,10 @@ function MainAppContent() {
             persistData('bar_recipes_v3', parsedRecs);
             showAlert('還原成功', `已從 Excel 還原 ${parsedIngs.length} 材料與 ${parsedRecs.length} 酒譜。`);
         } else {
-            // Merge logic... (Simple append for now to avoid complexity)
+            // Merge logic (prevent duplicates by name for recipes too)
             const newIngs = [...ingredients, ...parsedIngs.filter(n => !ingredients.some(o => o.nameZh === n.nameZh))];
-            const newRecs = [...recipes, ...parsedRecs];
+            const newRecs = [...recipes, ...parsedRecs.filter(n => !recipes.some(o => o.nameZh === n.nameZh))];
+            
             setIngredients(newIngs);
             setRecipes(newRecs);
             persistData('bar_ingredients_v3', newIngs);
