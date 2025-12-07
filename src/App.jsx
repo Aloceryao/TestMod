@@ -431,8 +431,10 @@ const IngredientPickerModal = ({ isOpen, onClose, onSelect, ingredients, categor
           <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar bg-slate-950">
              {filtered.map(ing => (
                 <button key={ing.id} onClick={() => { onSelect(ing.id); onClose(); }} className="w-full text-left p-3 bg-slate-900/50 border border-slate-800 rounded-xl hover:border-amber-500/50 transition-all flex justify-between items-center group active:bg-slate-800">
-                   <div>
-                      <div className="text-slate-200 font-medium">{ing.nameZh}</div>
+                   <div className="flex-1">
+                      <span className="text-slate-200 font-medium">{ing.nameZh}</span>
+                      {/* 顯示 ABV，方便檢查 */}
+                      <span className="text-[10px] text-slate-500 font-mono ml-2">({ing.abv || 0}%)</span>
                       <div className="text-slate-500 text-xs">{ing.nameEn}</div>
                    </div>
                    <div className="flex items-center gap-2">
@@ -804,7 +806,11 @@ const ViewerOverlay = ({ item, onClose, ingredients, startEdit, requestDelete })
                          const ing = ingredients.find(i => i.id === ingItem.id);
                          return (
                             <div key={idx} className="flex justify-between items-center py-2 border-b border-slate-800/50">
-                               <span className="text-slate-200 font-medium">{ing?.nameZh || '未知材料'}</span>
+                               <div className="flex-1">
+                                  <span className="text-slate-200 font-medium">{ing?.nameZh || '未知材料'}</span>
+                                  {/* ABV Display */}
+                                  <span className="text-[10px] text-slate-500 font-mono ml-2">({ing?.abv || 0}%)</span>
+                               </div>
                                <span className="text-amber-500 font-mono font-bold">{ingItem.amount}ml</span>
                             </div>
                          );
@@ -1205,7 +1211,7 @@ function MainAppContent() {
            nameZh: '', nameEn: '', type: 'classic', baseSpirit: '',
            price: 0, technique: 'Stir', glass: 'Coupe',
            ingredients: [], steps: '', tags: [], image: '', flavorDescription: '',
-           garnish: '', 
+           garnish: '', // Init garnish to avoid controlled/uncontrolled warning
            bottleCost: '', bottleCapacity: 700, priceShot: '', priceGlass: '', priceBottle: '', targetCostRate: 25 
         });
       } else {
