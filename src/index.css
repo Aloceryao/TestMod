@@ -49,7 +49,6 @@ button {
 button:hover {
   border-color: #646cff;
 }
-button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
@@ -65,4 +64,13 @@ button:focus-visible {
   button {
     background-color: #f9f9f9;
   }
+}
+/* iOS 點擊時的藍色高亮 */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 手指點擊不要出框，但鍵盤 Tab 仍可看到 focus（較安全） */
+button:focus:not(:focus-visible) {
+  outline: none;
 }
