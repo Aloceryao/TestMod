@@ -92,3 +92,21 @@ button:focus-visible,
     background-color: #f9f9f9;
   }
 }
+/* ===== 強制關掉 iOS 點擊高亮 + 所有 focus 外框（用 !important 壓過所有套件） ===== */
+html, body, * {
+  -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
+}
+
+/* 有些套件用 outline / box-shadow 畫框，全部強制清掉 */
+*:focus,
+*:focus-visible,
+*:active {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* 防止某些元素有預設外觀造成奇怪框 */
+button, a, [role="button"], [tabindex] {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
