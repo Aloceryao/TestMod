@@ -1341,7 +1341,7 @@ function MainAppContent() {
         {activeTab === 'tools' && (
            <div className="h-full flex flex-col overflow-y-auto p-6 text-center space-y-6 pt-20 w-full custom-scrollbar pb-24">
              <div className="w-20 h-20 bg-slate-800 rounded-full mx-auto flex items-center justify-center border border-slate-700 shadow-lg shadow-amber-900/10"><Wine size={32} className="text-amber-500"/></div>
-             <h2 className="text-xl font-serif text-slate-200">Bar Manager v11.5 (Excel Added)</h2>
+             <h2 className="text-xl font-serif text-slate-200">Bar Manager v11.5.1 (Excel Added)</h2>
              
              <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 w-full">
                 <div className="flex justify-between items-center text-xs text-slate-400 mb-2">
